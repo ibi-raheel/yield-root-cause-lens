@@ -162,15 +162,17 @@ The re-screen compares fails with passes **inside** each production regime only.
 | Time trend + fail-rate step, 500 runs (no within-regime link) | stratified ≈ 5% false positives; pooled inflates | 4.4% vs 94.8% |
 | Logistic log-likelihood vs unpenalised scikit-learn | equal | within 1e-4 |
 | SE₀(δ), δ_min and Noether N by hand (26/444, δ = 0.3, c = 0.0436) | 0.1166, 0.290, 549.1 | exact |
-| Monte Carlo power vs formula (S336 pass values, 1,000 runs per δ) | within a few points | within 3.4 points |
+| Monte Carlo power vs formula (S336 pass values, 1,000 runs per δ) | within a few points | within 3 points |
 | Individuals chart limits by hand | MR̄ = 1.5, 3·MR̄/1.128 = 3.989 | exact |
 
 `pytest` runs 31 tests (`npm run test:py`).
 
 ## Results (measured)
 
-- **Yield shift.** One change point at unit 352 (21 Aug 2008): yield 85.5% (95% CI 81.8–88.9) before and
-  95.6% (94.5–96.8) after, a shift of +10.1 points (6.4–14.1), permutation p = 0.001. In failing units per 1,000
+- **Yield shift.** One change point at unit 352 (21 Aug 2008; location 95% CI 6–21 Aug): yield 85.5% (95% CI
+  81.8–88.9) before and 95.6% (94.5–96.8) after, a shift of +10.1 points (6.4–14.1), permutation p = 0.001. The
+  before/after CIs are conditional on the fitted date, which was chosen to maximise the contrast, so they are slightly
+  optimistic; the permutation p accounts for that choice. In failing units per 1,000
   built: **145 before and 44 after, about 101 fewer (95% CI 63–142)**. The retrospective CUSUM agrees on the date.
 - **What stepped with yield.** 16 signals took a large step (|δ| ≥ 0.474) between 3 and 23 Aug. Timing chance alone
   gives 11 (95th percentile 16), so the alignment p is 0.068: not significant. Within ±3 days of the yield step, five
@@ -180,22 +182,34 @@ The re-screen compares fails with passes **inside** each production regime only.
   things to check against the line's change records (recipe, tool, maintenance), not a conclusion.
 - **Logging changed too, but gradually.** 8 of 11 missing-data families change their presence rate across the yield
   step (BH q < 0.05). The S112/S247/S385/S519 family drops from 78% to 48% present, S072/S073/S345/S346 from 80% to
-  40%, and a 12-column family starting at S109 goes from 0% to 45%. But each family's own best step falls 7 to 31 days
+  40%, and a 12-column family starting at S109 goes from 0% to 45%. But each family's own best step falls 7 to 55 days
   after the yield step, so measurement coverage drifted over weeks rather than switching on 21 Aug.
 - **The pooled screen was confounded with the production regime.** Of the 22 pooled FDR leads:
-  **12 are regime proxies**. That includes all three earlier "survivors": S103 (ρ_time = −0.64, stratified
-  q = 0.995), S510 and S129. They separate early from late production, not fails from passes inside a regime.
+  **12 behave like regime proxies in the training data**. That includes all three earlier "survivors": S103
+  (ρ_time = −0.64, stratified q = 0.995), S510 and S129. In train they separate early from late production, not fails
+  from passes inside a regime. The test window, however, lies entirely inside the post-change regime, and there S103
+  (test δ = 0.43, bootstrap 95% CI 0.20–0.64, p = 0.0001) and S510 (δ = 0.34, CI 0.11–0.55, p = 0.002) still separate
+  fails, with no time trend inside the test window (ρ ≈ 0). Their post-change training δ is near zero (0.01, 0.11),
+  so the evidence conflicts: either the link appeared later or the test result is chance. They stay open, not cleared.
   **1 is a drifting separator (S059)**: inside the post-change part of train, fails have a median of 4.62 and passes
-  0.56 (Youden threshold 1.00), but by the test window the whole signal has moved (fails −0.98, passes −0.56). The
-  lead is real, but its fail threshold moved. **6 separate fails within regime but are not confirmed** on the test split
+  0.56 (Youden threshold 1.00), but by the test window the whole signal has moved (fails −0.98, passes −0.56) and the
+  separation is gone (test δ = −0.05, CI −0.28 to 0.19). Either its relationship to failure drifted or the training
+  effect was not real; the data cannot tell which. **6 separate fails within regime but are not confirmed** on the test split
   (S021, S197, S205, S333, S341, S477; within-regime δ 0.21–0.36). **3 are noise.**
 - **Within-regime screen over all 444 signals.** 9 pass BH (q < 0.05), and the logistic fixed-effects test agrees on
-  all 444. **One, S336, also holds on the later 30% of units** (test δ = 0.25, one-sided p = 0.018). S336 was not in
+  all 444. **One, S336, also reaches p < 0.05 on the later 30% of units** (test δ = 0.25, bootstrap 95% CI 0.02–0.48,
+  one-sided p = 0.018). Nine leads were tested on the test split, so one passing at 0.05 would happen by chance about
+  37% of the time; BH across the nine gives q = 0.16. S336 is the best candidate, not a confirmed cause. It was not in
   the pooled list at all (pooled q = 0.29), because the regime contrast hid it.
 - **Power.** With 26 test fails, the smallest δ the replication test can detect at 80% power is 0.29. 16 of the 22
   pooled leads have a train δ below that, so "fails replication" mostly means "untestable with this data", not
   "spurious". At 17.5 units/day and 4.4% fails, the six within-regime leads each need **22 to 63 days** of new
-  production to confirm or drop. S059, with its threshold re-learned on current data, needs about 9 days.
+  production to confirm or drop, if their post-change training δ is the true effect. That δ is optimistic, because
+  the leads were selected for being significant. The test window (470 units, 26 fails, about 27 days) was already
+  larger than the planned sample for S197 (22 days) and S333 (26 days), and both came out at δ = −0.07 with CIs
+  (−0.25 to 0.13, −0.25 to 0.12) that exclude their training effect, so those two are probably inflated. S021 (test δ
+  0.16, CI −0.03 to 0.34) and S341 remain consistent with their training effect; S205 and S477 sit at the edge. S059
+  would need about 9 days at its training δ of 0.58, which the test window does not support.
 - **Money (assumption-driven).** 101 fewer fails per 1,000 is about 640 fewer failing units a year at this line's
   rate (6,372 units/year). At an assumed $100 per failed unit that is about $65k a year. The tornado shows the cost
   assumption dominates ($16k–$161k for $25–$250/unit); throughput (IQR) gives $30k–$92k and the fail-rate CI $40k–$90k.
@@ -214,13 +228,15 @@ The re-screen compares fails with passes **inside** each production regime only.
 1. **Day 1.** Pull the line's change records for 18–24 Aug and match them against the five signals that stepped within
    ±3 days of the yield jump (S103, S247, S519, S290, S059) and the logging families that changed. Timing alone cannot
    separate these from chance, so the change records do the confirming.
-2. **Day 1.** Put S336 (the only within-regime lead that replicates) and S059 (the drifting separator) on individuals
-   charts, with limits from post-change data only. Re-learn S059's fail threshold weekly until it stops moving.
+2. **Day 1.** Put S336 (the only within-regime lead that reached p < 0.05 on the test split) and S059 (the drifting
+   separator) on individuals charts, with limits from post-change data only. Re-check S059 weekly and drop it if it
+   still does not separate fails. Re-test S103 and S510, which separate test-window fails despite no training effect.
 3. **Day 2.** Move the fail-rate CUSUM to Phase II: reference fixed from the first 200 units after the last known
    process change, batches of 50, k = 0.5, h = 5. Investigate any batch above 15% fails (the 4 Oct batch had 18%).
 4. **Days 1–63.** Collect labelled units and re-test the six within-regime leads as data arrives. Confirm or drop each
    by the date the power plan gives: S197 by about day 22, S333 by day 26, S021, S205 and S477 by day 42–44, and S341 by day 63.
-   Drop the 12 regime proxies now.
+   These dates assume the training effect is real; S197 and S333 already look weak on the test window, so expect to
+   drop them early. Deprioritise the regime proxies except S103 and S510.
 5. **Ongoing.** Report yield as failing units per 1,000, with the cost per failed unit agreed with the customer
    in place of the swept assumption.
 
@@ -231,7 +247,8 @@ The re-screen compares fails with passes **inside** each production regime only.
 - The measurements are anonymised (S000–S589), so the physical meaning of a signal cannot be named.
 - The test split has only 26 fails (minimum detectable δ = 0.29), so a signal failing replication is weak evidence
   that it is spurious; one passing is moderate evidence that it is real.
-- Regimes come from the fail series. Binary segmentation found no second significant split, so slower drift inside a
+- Regimes come from the fail series of all units, test labels included. Fitted on train labels only, the change point
+  moves from unit 352 to 374, so the effect on the stratum boundary is small. Binary segmentation found no second significant split, so slower drift inside a
   regime is not removed by stratification. ρ_time and the drift flags are reported for that reason.
 - The timing test asks whether more signals step near the yield jump than chance would give. It cannot say which
   single signal caused the jump; that needs the line's change records.

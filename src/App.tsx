@@ -48,7 +48,7 @@ export function App() {
         {s.tested} signals tested on the first 70% of units: {s.raw_p_lt_05} at raw p &lt; 0.05, {s.fdr_q_lt_05} after
         Benjamini-Hochberg, {s.fdr_and_holdout} also hold on the later 30%.
         {r.regime_screen && <> Re-screened within production regime: {r.regime_screen.strat_fdr_leads} pass FDR, and{' '}
-          {r.regime_screen.strat_fdr_and_holdout_list.join(', ') || 'none'} also hold on the later 30%.</>}
+          {r.regime_screen.strat_fdr_and_holdout_list.join(', ') || 'none'} also reach p &lt; 0.05 on the later 30% ({r.regime_screen.strat_fdr_and_holdout_list.length} of {r.regime_screen.strat_fdr_leads} tested, so not yet confirmed).</>}
       </p>
       <div className="wrap">
         <table>
