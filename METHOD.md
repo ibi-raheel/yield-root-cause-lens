@@ -141,6 +141,55 @@ The re-screen compares fails with passes **inside** each production regime only.
 - **Individuals charts.** Centre = mean, limits = mean ± 3·MR̄/1.128, with MR̄ the mean moving range, set from
   post-change train units only and applied to the test split.
 
+## 8. Trained models against simple baselines (`pipeline/run_ai.py`, `pipeline/yrcl/ai.py`)
+
+Each trained model is scored on units after a training cut, next to a simple baseline fitted on the same units.
+The rules for every comparison:
+
+- **Time-blocked validation.** Cuts at 50/60/70/80% of units are moved forward to the next midnight, so no day is split
+  between fitting and scoring. Columns, imputation medians, scaling, C and the regime boundary are all fitted on
+  training rows only. The regime boundary is re-estimated on each training window (unit 352 or 374).
+- **Uncertainty.** A day-block bootstrap (1,000 resamples, whole days drawn with replacement) over the held-out period.
+  The same draw is used for the AI and the baseline, so the CI is on their **difference**. Results pooled over cuts reuse
+  one draw of days across all cuts, which keeps the overlap between cuts.
+- **Declared before running:** the metric, k ∈ {5, 10, 20} (primary k = 10), the cuts, and the comparisons below. Every
+  variant that was run is reported here.
+
+**8a. Root-cause ranker (stability selection).** Each of 100 resamples takes half of the training days (whole days),
+imputes and scales on that half only, and fits an L1 logistic (class-weighted) at C ∈ {0.02, 0.05, 0.1}, with the
+training-window regime indicator as an extra column. A signal's score is its maximum selection frequency over the C grid
+(Meinshausen & Bühlmann 2010). Ties are broken by |mean coefficient|, and the sign of the mean coefficient gives the direction.
+Baselines: |Welch t| on the same training rows,
+
+  t = (x̄_f − x̄_p) / √(s_f²/n_f + s_p²/n_p),
+
+and, as a second baseline, the Mann-Whitney p ranking from §2. **Score:** the mean held-out Cliff's δ of the top-k
+signals, each signed by its training direction (so δ > 0 means the direction replicated on later units), plus the count
+reaching one-sided p < 0.05. A regime-aware pair was also declared: stability selection vs Welch t, both fitted only on
+the post-change units of the training window.
+
+**8b. Regime-aware failure model.** L1 logistic, C ∈ {0.01, 0.03, 0.1, 0.3} chosen by forward-chaining CV over whole
+days inside the training rows (ROC-AUC). It is trained on the post-change units of the training window only, and compared
+with (i) the same model trained on all training units and (ii) the single signal with the largest |Welch t| inside the
+post-change training units, median-imputed. Cuts at 60/70/80%. Metric: held-out ROC-AUC (PR-AUC also exported).
+
+**8c. Anomaly detector for the regime change.** An Isolation Forest (300 trees, 128 samples per tree) is fitted on the
+first 12 days of production (71 units, 19 Jul–1 Aug). Inputs are the 444 usable signals, median-imputed and scaled by
+the reference median and IQR, clipped at ±20. Reference scores come from a leave-one-day-out fit, so they are out of
+sample. Each unit's score becomes z = (s − μ_ref)/σ_ref, and an upper CUSUM runs on z − 0.5. The baseline is a Bernoulli
+CUSUM on the pass/fail stream (Reynolds & Stoumbos 1999):
+
+  W_t = max(0, W_{t−1} + ℓ_t),  ℓ_t = ln(p₁/p₀) for a fail and ln((1−p₁)/(1−p₀)) for a pass,
+
+with p₀ = 0.211 (reference fail rate) and p₁ = p₀/2. **Both thresholds are calibrated to the same in-control average run
+length, 500 units**, by simulating day-block resamples of the reference increments (300 runs of 4,000 units, smallest h
+reaching 500). That gives h = 8.5 for the forest and h = 3.3 for the Bernoulli CUSUM (h = 2.9 under the textbook iid
+model). Monitoring starts after the reference. An alarm before 6 Aug (the lower end of the change-point location CI)
+counts as a false alarm and resets the path. Detection is the first alarm from 6 Aug on, and delay is measured in units
+from the estimated change (unit 352, 21 Aug). The 50-unit batch CUSUM from §3, re-based on the reference fail rate, is
+reported too. The CI on the delay difference resamples whole days, separately within the monitored pre-change stretch
+and the post-change stretch, with the fitted scores held fixed.
+
 ## Validation
 
 | Check | Expected | Result |
@@ -164,8 +213,14 @@ The re-screen compares fails with passes **inside** each production regime only.
 | SE₀(δ), δ_min and Noether N by hand (26/444, δ = 0.3, c = 0.0436) | 0.1166, 0.290, 549.1 | exact |
 | Monte Carlo power vs formula (S336 pass values, 1,000 runs per δ) | within a few points | within 3 points |
 | Individuals chart limits by hand | MR̄ = 1.5, 3·MR̄/1.128 = 3.989 | exact |
+| Bernoulli CUSUM increments and path by hand (p₀ 0.2, p₁ 0.1, 6 units) | +0.117783 / −0.693147; alarm at unit 6 for h = 0.3 | exact |
+| Welch t by hand ([4, 6] vs [1, 2, 3]) and vs `scipy.stats.ttest_ind(equal_var=False)` | 2.598 | exact; rel. error < 1e-10 |
+| Day-blocked subsample and bootstrap keep every sampled day whole; cuts never split a day | always | passes |
+| Imputation and scaling statistics come from training rows only | test row leaves them unchanged | passes |
+| Stability selection on 60 noise columns with 2 planted effects (600 units) | planted pair ranked 1–2 with correct signs | passes |
+| CUSUM h calibration reaches the target ARL0 (iid Bernoulli, target 200) | smallest h with ARL0 ≥ target | passes |
 
-`pytest` runs 31 tests (`npm run test:py`).
+`pytest` runs 40 tests (`npm run test:py`).
 
 ## Results (measured)
 
@@ -223,6 +278,31 @@ The re-screen compares fails with passes **inside** each production regime only.
   score ROC-AUC 0.70 (L1) and 0.71 (boosting), in line with published SECOM numbers. **The gap of about 0.16 AUC is
   the optimism you get from ignoring time order.**
 
+- **Trained models vs simple baselines (§8).** One trained component wins somewhere measurable. The other two lose to
+  their simple baselines, and are reported as losses.
+  - *Regime-aware failure model: wins against all-history training.* Averaged over the 60/70/80% cuts, held-out ROC-AUC is
+    0.638 trained inside the post-change regime vs 0.530 trained on all history (difference +0.108, 95% CI 0.026–0.199).
+    Per cut: +0.107 (0.005–0.210), +0.071 (−0.058 to 0.203), +0.145 (0.041–0.313). Changing only the solver's shuffle seed
+    (6 seeds) flips the CV choice of C at the 80% cut, which moves the average gain between +0.081 and +0.108. It stays
+    positive for every seed, and the run with the +0.081 gain had a CI of 0.002–0.162. **Against the single best
+    within-regime signal it does not win on average** (0.638 vs 0.574, +0.064, CI −0.031 to 0.181; +0.038 to +0.064 across
+    seeds). It wins only at the 80% cut, which has the most post-change training data (908 units, 37 fails): 0.717 vs 0.486,
+    +0.231 (0.049–0.447). That is one cut of three, so treat it as a hint that the model needs about 35+ in-regime fails,
+    not as a result.
+  - *Stability-selection ranker: loses.* Pooled over four cuts at k = 10, the top-10 signals replicate with mean signed held-out
+    δ = 0.016 (4 of 40 at p < 0.05), against 0.072 for the Welch t ranking (8 of 40) and 0.095 for the Mann-Whitney ranking
+    (8 of 40). Differences −0.056 (CI −0.131 to 0.007) and −0.080 (−0.177 to 0.023). The k = 5 and k = 20 comparisons point
+    the same way. The regime-aware pair also loses (0.057 vs 0.098, −0.041, CI −0.155 to 0.046; at k = 5, −0.125, CI −0.289
+    to −0.003). Fitting either ranker inside the regime helps more than switching from univariate to multivariate:
+    Welch t rises from 0.072 to 0.098 and stability selection from 0.016 to 0.057.
+  - *Isolation Forest change detector: loses.* At the same in-control run length (500 units), the Bernoulli CUSUM on pass/fail
+    alarms on 7 Aug (unit 148), inside the change-point location CI, after one false alarm on 5 Aug. The batch CUSUM alarms on
+    20 Aug (32 units before the estimate). The forest's CUSUM does not alarm until 15 Oct (+1,177 units). Across 1,000
+    day-block resamples the forest is never earlier, misses the change in 94% of runs, and is 762 units later in the median
+    (CI 191–1,376) when both detect. The Bernoulli CUSUM false-alarms before 6 Aug in 48% of resamples. **Why the forest
+    misses:** after the reference window the units look *more* typical, not less (mean z −0.59 before the change, −0.15 after).
+    The first 12 days were the unusual period, so "far from the reference" does not mean "new regime" on this line.
+
 ## Week-1 plan on a line like this
 
 1. **Day 1.** Pull the line's change records for 18–24 Aug and match them against the five signals that stepped within
@@ -253,4 +333,10 @@ The re-screen compares fails with passes **inside** each production regime only.
 - The timing test asks whether more signals step near the yield jump than chance would give. It cannot say which
   single signal caused the jump; that needs the line's change records.
 - Cost per failed unit is not in the data. Every dollar figure is a labelled assumption, swept.
+- §8 compares three trained models. Only the regime-aware failure model wins, and only against all-history training. On
+  average it does not separate from the single best within-regime signal, and the size of its gain depends on the solver seed (+0.08 to +0.11). With 16–28 held-out fails per cut, CIs on AUC differences are
+  about ±0.1 wide.
+- The anomaly reference is 71 units with a 21% fail rate, because early production was sparse. A longer or cleaner
+  reference could change the forest's behaviour. The threshold calibration resamples whole days to keep within-day
+  correlation, but 12 days is a thin basis for an ARL estimate.
 - The §3 CUSUM is retrospective; the Phase II CUSUM in §7 has its limits frozen in advance.

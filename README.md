@@ -37,6 +37,20 @@ the date the process changed, and how long it will take to confirm each lead.
    plan in METHOD.md dates each confirm-or-drop decision.
 5. **Does a model predict future failures?** Time-ordered held-out test: L1 logistic ROC-AUC 0.55 and gradient boosting 0.53,
    against 0.70–0.71 under shuffled CV. The gap shows how much a random split overstates performance.
+6. **Where does a trained model earn its place?** Three trained models were each scored against a simple baseline on
+   held-out time, with validation split by whole days and day-block bootstrap CIs on the difference:
+   - **Regime-aware failure model (wins against all-history training).** Trained only inside the post-change regime, the
+     model reaches held-out ROC-AUC 0.64 vs 0.53 when trained on all history (+0.11, 95% CI 0.03–0.20, averaged over three
+     time cuts; +0.08 to +0.11 across solver seeds). On average it does **not** beat the single best within-regime signal
+     (+0.06, CI −0.03 to 0.18). It does at the latest cut, which has the most in-regime fails (0.72 vs 0.49, +0.23, CI
+     0.05–0.45), but that is one cut of three.
+   - **Stability-selection root-cause ranker (loses).** L1 logistic over 100 day-blocked half-subsamples. Its top-10 signals
+     replicate on later units less well than a plain Welch t ranking (mean signed held-out δ 0.016 vs 0.072, difference
+     −0.056, CI −0.13 to 0.01) and a Mann-Whitney ranking (0.095). Fitting either ranker inside the regime helps more than
+     going multivariate.
+   - **Isolation Forest change detector (loses).** Both detectors are calibrated to the same false-alarm rate. A Bernoulli CUSUM on
+     pass/fail flags the 21 Aug change on 7 Aug, inside its location CI. The forest flags nothing until 15 Oct
+     (+1,177 units), because after the first 12 days units look more typical, not less.
 
 ## How it works
 - `pipeline/yrcl/stats.py`: U statistic, Cliff's delta, BH, CUSUM and the change point, each written out and unit-tested
@@ -46,7 +60,9 @@ the date the process changed, and how long it will take to confirm each lead.
 - `pipeline/yrcl/rootcause.py` + `pipeline/run_rootcause.py`: per-signal change points and the timing permutation test,
   the regime-stratified screen, power and sample size, failing units per 1,000 with a cost sweep, a Phase II CUSUM and
   individuals-chart limits.
-- `tests/`: 31 pytest checks (hand calcs, library cross-checks, published CUSUM run lengths, planted-step recovery, a confounding simulation, Monte Carlo power, consistency of the real-data results).
+- `pipeline/yrcl/ai.py` + `pipeline/run_ai.py`: stability selection, the regime-aware model, the Isolation Forest and
+  Bernoulli CUSUMs with matched run lengths, and the day-block bootstrap on every AI-vs-baseline difference.
+- `tests/`: 40 pytest checks (hand calcs, library cross-checks, published CUSUM run lengths, planted-step recovery, a confounding simulation, Monte Carlo power, consistency of the real-data results).
 - `src/`: a static Vite + React page that reads the precomputed JSON. No backend, no API keys.
 - [METHOD.md](METHOD.md): equations, assumptions, validation table and limitations.
 
@@ -56,8 +72,8 @@ the date the process changed, and how long it will take to confirm each lead.
 mkdir -p ../_downloads/secom && curl -L -o ../_downloads/secom/secom.zip \
   https://archive.ics.uci.edu/static/public/179/secom.zip && unzip -o ../_downloads/secom/secom.zip -d ../_downloads/secom
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-npm run pipeline     # writes public/results.json (about 1.5 min)
-npm run test:py      # 31 tests
+npm run pipeline     # writes public/results.json (about 3.5 min)
+npm run test:py      # 40 tests
 npm install && npm run dev
 ```
 
