@@ -10,6 +10,11 @@ type Results = {
   yield_time: { change_point: Record<string, unknown> }
   signals: { tested: number; raw_p_lt_05: number; fdr_q_lt_05: number; fdr_and_holdout: number; top20: Row[] }
   models: { test_fail_rate: number; results: Record<string, ModelResult>; shuffled_cv: Record<string, number> }
+  regime_screen?: { leads: { feature: string; bucket: string }[]; strat_fdr_leads: number; strat_fdr_and_holdout_list: string[] }
+}
+const BUCKET: Record<string, string> = {
+  a_replicating: 'within-regime, holds', b_regime_proxy: 'regime proxy', c_drifting: 'drifting separator',
+  d_noise: 'noise', e_unconfirmed: 'within-regime, unconfirmed',
 }
 
 const f = (x: number | null | undefined, d = 3) => (x == null ? '–' : x.toFixed(d))
@@ -25,6 +30,7 @@ export function App() {
   if (!r) return <p>Loading results…</p>
   const cp = r.yield_time.change_point as Record<string, number | string>
   const s = r.signals
+  const bucket = Object.fromEntries((r.regime_screen?.leads ?? []).map((l) => [l.feature, BUCKET[l.bucket] ?? l.bucket]))
   return (
     <main>
       <h1>Yield Root-Cause Lens</h1>
@@ -41,11 +47,13 @@ export function App() {
       <p>
         {s.tested} signals tested on the first 70% of units: {s.raw_p_lt_05} at raw p &lt; 0.05, {s.fdr_q_lt_05} after
         Benjamini-Hochberg, {s.fdr_and_holdout} also hold on the later 30%.
+        {r.regime_screen && <> Re-screened within production regime: {r.regime_screen.strat_fdr_leads} pass FDR, and{' '}
+          {r.regime_screen.strat_fdr_and_holdout_list.join(', ') || 'none'} also hold on the later 30%.</>}
       </p>
       <div className="wrap">
         <table>
           <thead>
-            <tr><th>Signal</th><th>p (train)</th><th>q</th><th>Cliff's δ train</th><th>δ test</th><th>p test (1-sided)</th><th>Top-10 stability</th><th>ρ with time</th><th>Verdict</th></tr>
+            <tr><th>Signal</th><th>p (train)</th><th>q</th><th>Cliff's δ train</th><th>δ test</th><th>p test (1-sided)</th><th>Top-10 stability</th><th>ρ with time</th><th>Verdict</th><th>Within-regime verdict</th></tr>
           </thead>
           <tbody>
             {s.top20.map((x) => (
@@ -53,6 +61,7 @@ export function App() {
                 <td>{x.feature}</td><td>{fp(x.p)}</td><td>{fp(x.q)}</td><td>{f(x.delta)}</td><td>{f(x.delta_test)}</td>
                 <td>{f(x.p_test_1s)}</td><td>{f(x.stability, 2)}</td><td>{f(x.rho_time, 2)}</td>
                 <td>{x.fdr_pass && x.holdout_pass ? 'holds' : x.fdr_pass ? 'fails held-out' : 'fails FDR'}</td>
+                <td>{bucket[x.feature] ?? '–'}</td>
               </tr>
             ))}
           </tbody>
