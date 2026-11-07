@@ -326,8 +326,49 @@ def regime_section(X, y, ts, day_id, store):
               "diff_vs_pooled": r(m4["reg"] - m4["pool"], 4), "diff_vs_single": r(m4["reg"] - m4["one"], 4)}
     with50["diff_vs_pooled_ci"], with50["diff_vs_pooled_p_le0"] = boot_ci(b4["pool"])
     with50["diff_vs_single_ci"], with50["diff_vs_single_p_le0"] = boot_ci(b4["one"])
+    # adversarial check (added at review, after the main result was known): is the all-history model a fair baseline?
+    # (a) the same all-history L1 with one extra column, the training-window regime indicator (test rows = 1);
+    # (b) the single best Welch-t signal over all training history. Cuts 60/70/80%, same bootstrap scheme, own RNG.
+    fair = {}
+    for f in CUT_FRACS[1:]:
+        S = store[f]
+        c, A, tau_tr = S["cut"], S["A"], S["tau"]
+        te = np.arange(c, n)
+        Ad = np.hstack([A, (np.arange(n) >= tau_tr).astype(float)[:, None]])
+        o_a, s_a = ai.t_ranking(A[:c], y[:c])
+        ja = o_a[0]
+        med_a = np.nanmedian(A[:c][:, ja])
+        fair[f] = dict(te=te, reg=preds[f]["reg"], dummy=l1_fit_predict(Ad[:c], y[:c], Ad[te], day_id[:c])[0],
+                       one_all=s_a[ja] * np.where(np.isnan(A[te][:, ja]), med_a, A[te][:, ja]))
+    fm = {k: float(np.mean([roc_auc_score(y[P["te"]], P[k]) for P in fair.values()])) for k in ("reg", "dummy", "one_all")}
+    rngf = np.random.default_rng(SEED + 9)
+    bf = {"dummy": [], "one_all": []}
+    for _ in range(N_BOOT):
+        ub = np.concatenate([members[d] for d in rngf.choice(days, len(days), replace=True)])
+        cur = {"dummy": [], "one_all": []}
+        for P in fair.values():
+            c = P["te"][0]
+            u = ub[ub >= c] - c
+            yb = y[P["te"]][u]
+            if yb.sum() < 2 or yb.sum() == len(yb):
+                break
+            a_reg = roc_auc_score(yb, P["reg"][u])
+            for b in cur:
+                cur[b].append(a_reg - roc_auc_score(yb, P[b][u]))
+        for b in bf:
+            if len(cur[b]) == len(fair):
+                bf[b].append(float(np.mean(cur[b])))
+    fairer = {"status": "added at review after the main result was known; exploratory",
+              "per_cut": [{"cut_frac": f, "auc_pooled_with_regime_indicator": r(roc_auc_score(y[P["te"]], P["dummy"]), 4),
+                           "auc_single_all_history": r(roc_auc_score(y[P["te"]], P["one_all"]), 4)} for f, P in fair.items()],
+              "auc_regime": r(fm["reg"], 4), "auc_pooled_with_regime_indicator": r(fm["dummy"], 4),
+              "auc_single_all_history": r(fm["one_all"], 4),
+              "diff_vs_pooled_with_regime_indicator": r(fm["reg"] - fm["dummy"], 4),
+              "diff_vs_single_all_history": r(fm["reg"] - fm["one_all"], 4)}
+    fairer["diff_vs_pooled_with_regime_indicator_ci"], fairer["diff_vs_pooled_with_regime_indicator_p_le0"] = boot_ci(bf["dummy"])
+    fairer["diff_vs_single_all_history_ci"], fairer["diff_vs_single_all_history_p_le0"] = boot_ci(bf["one_all"])
     return {"model": "L1 logistic, C by forward-chaining CV over whole days", "per_cut": rows, "mean_over_cuts": mean_row,
-            "solver_seed_sensitivity": sens, "sensitivity_with_50pct_cut": with50}
+            "solver_seed_sensitivity": sens, "sensitivity_with_50pct_cut": with50, "fairer_pooled_check": fairer}
 
 
 # ============================================================ 3. anomaly detection

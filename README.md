@@ -37,24 +37,30 @@ the date the process changed, and how long it will take to confirm each lead.
    plan in METHOD.md dates each confirm-or-drop decision.
 5. **Does a model predict future failures?** Time-ordered held-out test: L1 logistic ROC-AUC 0.55 and gradient boosting 0.53,
    against 0.70–0.71 under shuffled CV. The gap shows how much a random split overstates performance.
-6. **Where does a trained model earn its place?** Three trained models were each scored against a simple baseline on
-   held-out time, with validation split by whole days and day-block bootstrap CIs on the difference:
-   - **Regime-aware failure model (wins against all-history training).** Trained only inside the post-change regime, the
-     model reaches held-out ROC-AUC 0.64 vs 0.53 when trained on all history (+0.11, 95% CI 0.03–0.20, averaged over three
-     time cuts; +0.08 to +0.11 across solver seeds). On average it does **not** beat the single best within-regime signal
-     (+0.06, CI −0.03 to 0.18). It does at the latest cut, which has the most in-regime fails (0.72 vs 0.49, +0.23, CI
-     0.05–0.45), but that is one cut of three. Adding a fourth, earlier cut keeps the verdict (+0.10 vs all history, CI
-     0.02–0.18; +0.04 vs the single signal, CI −0.05 to 0.11).
+6. **Does a trained model earn its place?** Not clearly, on this data. Three trained models were each scored against a
+   simple baseline on held-out time, with validation split by whole days and day-block bootstrap CIs on the difference:
+   - **Regime-aware failure model (beats naive all-history training only; ties the simple baselines).** Trained only
+     inside the post-change regime, the model reaches held-out ROC-AUC 0.64 vs 0.53 when the same model is trained on all
+     history with no regime term (+0.11, 95% CI 0.03–0.20, averaged over three time cuts; +0.08 to +0.11 across solver
+     seeds). That baseline is weak: the single best all-history signal alone scores 0.57. Give the all-history model one
+     extra column, the regime indicator, and the gap shrinks to +0.06 (CI −0.02 to 0.11), which is not significant. That
+     check was added at review, after the main result was known. The model also does **not** beat the single best
+     within-regime signal (+0.06, CI −0.03 to 0.18). It does at the latest cut (0.72 vs 0.49, +0.23, CI 0.05–0.45), but
+     that is one cut of three. Adding a fourth, earlier cut leaves the verdict unchanged (+0.10 vs all history, CI
+     0.02–0.18; +0.04 vs the single signal, CI −0.05 to 0.11). Knowing the regime matters; no trained model here clearly
+     beats a simple baseline that also knows it.
    - **Stability-selection root-cause ranker (loses).** L1 logistic over 100 day-blocked half-subsamples. Its top-10 signals
      replicate on later units less well than a plain Welch t ranking (mean signed held-out δ 0.016 vs 0.072, difference
      −0.056, CI −0.13 to 0.01) and a Mann-Whitney ranking (0.095). Fitting either ranker inside the regime helps more than
      going multivariate. Feeding each ranking's top 10 into the same small model does not change that (held-out ROC-AUC
      0.51 vs 0.55).
-   - **Isolation Forest change detector (loses).** Both detectors are calibrated to the same false-alarm rate. A Bernoulli CUSUM on
-     pass/fail flags the 21 Aug change on 7 Aug, inside its location CI. The forest flags nothing until 15 Oct
-     (+1,177 units), because after the first 12 days units look more typical, not less. The CUSUM's early alarm also
-     comes with a caveat: the reference fail rate (21%) was unusually high, and in 99% of resamples its alarm lands
-     before the change, so it reacts to "lower than the reference" as much as to the step.
+   - **Isolation Forest change detector (loses; neither detector works).** Both detectors are calibrated to the same
+     false-alarm rate. The forest flags nothing until 15 Oct (+1,177 units after the 21 Aug change), because after the
+     first 12 days units look more typical, not less. A Bernoulli CUSUM on pass/fail alarms on 5 Aug and again on 7 Aug,
+     two weeks **before** the estimated change. The 7 Aug alarm counts as a "detection" only because it falls after the
+     lower end of the change-date CI, which was itself estimated from all the data. The reference fail rate (21%) was
+     unusually high, and in 99% of resamples the CUSUM alarms before the change, so it is reacting to "lower than the
+     reference", not detecting the 21 Aug step.
 
 ## How it works
 - `pipeline/yrcl/stats.py`: U statistic, Cliff's delta, BH, CUSUM and the change point, each written out and unit-tested

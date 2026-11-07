@@ -176,6 +176,10 @@ days inside the training rows (ROC-AUC). It is trained on the post-change units 
 with (i) the same model trained on all training units and (ii) the single signal with the largest |Welch t| inside the
 post-change training units, median-imputed. Cuts at 60/70/80%. Metric: held-out ROC-AUC (PR-AUC also exported). A sensitivity run adds the 50% cut, where the
 post-change training window holds only 18 fails.
+*Added at review, after the main result was known (exploratory):* two fairer all-history baselines, to test whether
+baseline (i) is a straw man. (iii) The same all-history L1 with one extra column, the training-window regime indicator
+(1 from the re-estimated boundary on, so 1 for every test unit). (iv) The single best |Welch t| signal over all training
+units. Same cuts, same bootstrap scheme (own random stream).
 
 **8c. Anomaly detector for the regime change.** An Isolation Forest (300 trees, 128 samples per tree) is fitted on the
 first 12 days of production (71 units, 19 Jul–1 Aug). Inputs are the 444 usable signals, median-imputed and scaled by
@@ -282,17 +286,27 @@ and the post-change stretch, with the fitted scores held fixed.
   score ROC-AUC 0.70 (L1) and 0.71 (boosting), in line with published SECOM numbers. **The gap of about 0.16 AUC is
   the optimism you get from ignoring time order.**
 
-- **Trained models vs simple baselines (§8).** One trained component wins somewhere measurable. The other two lose to
-  their simple baselines, and are reported as losses.
-  - *Regime-aware failure model: wins against all-history training.* Averaged over the 60/70/80% cuts, held-out ROC-AUC is
-    0.638 trained inside the post-change regime vs 0.530 trained on all history (difference +0.108, 95% CI 0.026–0.199).
+- **Trained models vs simple baselines (§8).** No trained component clearly beats a fair simple baseline. The regime-aware
+  model beats one naive baseline (the same model on all history, no regime term) and ties every simple baseline; the
+  other two lose to their simple baselines, and are reported as losses.
+  - *Regime-aware failure model: beats naive all-history training, ties the simple baselines.* Averaged over the 60/70/80%
+    cuts, held-out ROC-AUC is 0.638 trained inside the post-change regime vs 0.530 trained on all history (difference
+    +0.108, 95% CI 0.026–0.199). **That baseline is weak.** The single best all-history signal alone scores 0.574, above
+    the all-history model. With one extra column, the regime indicator, the all-history model reaches 0.580 and the gap
+    falls to +0.058 (CI −0.016 to 0.111, not significant; per cut 0.498, 0.478, 0.763). Against the single all-history
+    signal the gap is +0.064 (CI −0.012 to 0.184). Both checks were added at review, after the main result was known.
+    So the +0.108 mostly measures what an all-history model loses by not knowing the regime, which a one-column fix
+    largely recovers, not an advantage of regime-specific training over a fair pooled model. PR-AUC (test fail rate
+    4.7–5.8%) moves little: mean 0.084 regime vs 0.074 all history vs 0.080 single signal, and at the 70% cut all-history
+    training is higher (0.069 vs 0.066).
     Per cut: +0.107 (0.005–0.210), +0.071 (−0.058 to 0.203), +0.145 (0.041–0.313). Changing only the solver's shuffle seed
     (6 seeds) flips the CV choice of C at the 80% cut, which moves the average gain between +0.081 and +0.108. It stays
     positive for every seed, and the run with the +0.081 gain had a CI of 0.002–0.162. **Against the single best
     within-regime signal it does not win on average** (0.638 vs 0.574, +0.064, CI −0.031 to 0.181; +0.038 to +0.064 across
     seeds). It wins only at the 80% cut, which has the most post-change training data (908 units, 37 fails): 0.717 vs 0.486,
-    +0.231 (0.049–0.447). That is one cut of three, so treat it as a hint that the model needs about 35+ in-regime fails,
-    not as a result. Adding the 50% cut (18 in-regime training fails) leaves the verdict unchanged: +0.105 against
+    +0.231 (0.049–0.447). That is one cut of three, picked out after the fact, so it is not a result. It may mean the
+    model needs more in-regime fails, but one cut cannot show that, and the CV choice of C at that cut moves with the
+    solver seed. Adding the 50% cut (18 in-regime training fails) leaves the verdict unchanged: +0.105 against
     all-history training (CI 0.024–0.177), +0.036 against the single signal (CI −0.049 to 0.115). At that cut alone the
     single signal wins (0.629 vs 0.581).
   - *Stability-selection ranker: loses.* Pooled over four cuts at k = 10, the top-10 signals replicate with mean signed held-out
@@ -304,14 +318,17 @@ and the post-change stretch, with the fitted scores held fixed.
     (top-k into the same small logistic, held-out ROC-AUC, mean over four cuts) does not rescue it: at k = 10, 0.512 for
     stability selection vs 0.546 for Welch t and 0.557 for Mann-Whitney; inside the regime, 0.560 vs 0.604. The univariate
     rankings win at k = 5 and k = 20 as well. No CI is reported for this check because it cannot change the verdict.
-  - *Isolation Forest change detector: loses.* At the same in-control run length (500 units), the Bernoulli CUSUM on pass/fail
-    alarms on 7 Aug (unit 148), inside the change-point location CI, after one false alarm on 5 Aug. The batch CUSUM alarms on
+  - *Isolation Forest change detector: loses, and the baseline does not work either.* At the same in-control run length
+    (500 units), the Bernoulli CUSUM on pass/fail alarms on 7 Aug (unit 148), 14 days and 204 units before the estimated
+    change, after one false alarm on 5 Aug. The 7 Aug alarm counts as a detection only because the scoring rule treats
+    anything from 6 Aug (the lower end of the change-date CI, estimated on all units) as on time; that rule uses
+    hindsight and only affects the scoring, not either detector. The batch CUSUM alarms on
     20 Aug (32 units before the estimate). The forest's CUSUM does not alarm until 15 Oct (+1,177 units). Across 1,000
     day-block resamples the forest is never earlier, misses the change in 94% of runs, and is 762 units later in the median
     (CI 191–1,376) when both detect. The Bernoulli CUSUM false-alarms before 6 Aug in 48% of resamples. **Why the forest
     misses:** after the reference window the units look *more* typical, not less (mean z −0.59 before the change, −0.15 after).
     The first 12 days were the unusual period, so "far from the reference" does not mean "new regime" on this line.
-    **The baseline's win needs the same caveat.** The fail rate was 21.1% in the reference window, 5.3% from 2 to 6 Aug,
+    **The baseline's "win" is not a detection.** The fail rate was 21.1% in the reference window, 5.3% from 2 to 6 Aug,
     14.7% from 6 Aug to the change and 4.4% after it. In 99.4% of resamples the Bernoulli CUSUM's first alarm lands
     before the estimated change, so it is reacting to "lower than the reference", which was already true from early
     August, more than to the 21 Aug step itself. Neither detector, as set up here, is a clean early warning for that step.
@@ -346,9 +363,15 @@ and the post-change stretch, with the fitted scores held fixed.
 - The timing test asks whether more signals step near the yield jump than chance would give. It cannot say which
   single signal caused the jump; that needs the line's change records.
 - Cost per failed unit is not in the data. Every dollar figure is a labelled assumption, swept.
-- §8 compares three trained models. Only the regime-aware failure model wins, and only against all-history training. On
-  average it does not separate from the single best within-regime signal, and the size of its gain depends on the solver seed (+0.08 to +0.11). With 16–28 held-out fails per cut, CIs on AUC differences are
-  about ±0.1 wide.
+- §8 compares three trained models. None clearly beats a fair simple baseline. The regime-aware failure model beats only
+  the naive all-history model (no regime term); it does not separate from the single best within-regime signal, from
+  the single best all-history signal, or from the all-history model given a regime indicator, and the size of its gain
+  depends on the solver seed (+0.08 to +0.11). With 16–28 held-out fails per cut, CIs on AUC differences are about ±0.1
+  wide. The test windows of the cuts are nested (each later window is part of the earlier ones), so the cuts are not
+  independent replications; the bootstrap keeps that overlap, but "holds at every cut" is weaker than it sounds.
+- No fitting step sees rows after its cut, and the regime boundary used by the models is re-estimated on training rows
+  only. Two things do use all units: the decision to model regimes at all came from the full-data change point (§3),
+  and the anomaly scoring rule (what counts as a false alarm vs a detection) uses that change point and its CI.
 - The anomaly reference is 71 units with a 21% fail rate, because early production was sparse. A longer or cleaner
   reference could change the forest's behaviour. The threshold calibration resamples whole days to keep within-day
   correlation, but 12 days is a thin basis for an ARL estimate.

@@ -124,6 +124,12 @@ def test_exported_ai_section_is_consistent():
     assert w["diff_vs_pooled_ci"][0] <= w["diff_vs_pooled_ci"][1]
     b = an["bootstrap"]
     assert 0 <= b["share_runs_bern_detection_before_change"] <= 1 - b["share_bern_no_detection"] + 1e-9
+    # fairer all-history baselines (review check): same regime-model AUC as the main table, consistent differences
+    fp = res["regime_model"]["fairer_pooled_check"]
+    assert fp["auc_regime"] == pytest.approx(res["regime_model"]["mean_over_cuts"]["auc_regime"], abs=2e-4)
+    assert fp["diff_vs_pooled_with_regime_indicator"] == pytest.approx(
+        fp["auc_regime"] - fp["auc_pooled_with_regime_indicator"], abs=2e-4)
+    assert fp["diff_vs_pooled_with_regime_indicator_ci"][0] <= fp["diff_vs_pooled_with_regime_indicator_ci"][1]
 
 
 def test_topk_model_is_fitted_on_training_rows_only_and_hand_auc():
