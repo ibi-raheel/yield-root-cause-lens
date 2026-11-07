@@ -281,3 +281,29 @@ def individuals_limits(x):
     mr = np.abs(np.diff(x)).mean()
     c = x.mean()
     return float(c), float(c - 3 * mr / 1.128), float(c + 3 * mr / 1.128)
+
+
+# ---------------------------------------------------------------- 4. lead triage
+DRIFT_DELTA = 0.33   # Romano "medium": a level move between regimes worth calling drift
+RHO_TIME = 0.3       # |Spearman rho| with unit order above which a lead is called a time trend
+
+
+def classify_lead(within_sig, within_sign_matches, holds_later, drift, rho, d_pass_regime,
+                  drift_delta=DRIFT_DELTA, rho_time=RHO_TIME) -> str:
+    """Sort one lead into a bucket.
+
+    within_sig: within-regime (stratified) BH q < 0.05. within_sign_matches: same direction as the pooled effect.
+    holds_later: one-sided p < 0.05 on the later (test) units. drift: passes move by |delta| >= drift_delta
+    between regimes or from train to test. rho: Spearman correlation with unit order on training units.
+    d_pass_regime: Cliff's delta of passes, later regimes vs the first.
+    """
+    within = bool(within_sig and within_sign_matches)
+    if within and holds_later:
+        return "a_replicating"
+    if within and drift:
+        return "c_drifting"
+    if within:
+        return "e_unconfirmed"
+    if abs(rho) > rho_time or abs(d_pass_regime) >= drift_delta:
+        return "b_regime_proxy"
+    return "d_noise"

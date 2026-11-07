@@ -1,5 +1,13 @@
 # Method
 
+## Research question
+
+When a line's yield moves, which of hundreds of test signals are worth walking to the line for, and which are just the
+date the process changed, in disguise? On this data yield moved on 21 Aug 2008 (+10.1 points, 145 to 44 failing units
+per 1,000). 12 of the 22 standard-screen leads were period proxies, and one within-period lead (S336) held on later
+units. Sections 1–8 below give the method. [SOLUTION.md](SOLUTION.md) turns it into a playbook with decision rules and the
+`triage` tool.
+
 The pipeline turns a wide, gappy, imbalanced table of line test measurements into three answers:
 when the line's yield moved and what moved with it, which signals separate failing units inside a production regime
 (and which of those leads survive honest checks), how much data it takes to confirm each lead, and whether any model
@@ -227,8 +235,9 @@ and the post-change stretch, with the fitted scores held fixed.
 | Imputation and scaling statistics come from training rows only | test row leaves them unchanged | passes |
 | Stability selection on 60 noise columns with 2 planted effects (600 units) | planted pair ranked 1–2 with correct signs | passes |
 | CUSUM h calibration reaches the target ARL0 (iid Bernoulli, target 200) | smallest h with ARL0 ≥ target | passes |
+| Triage CLI on SECOM vs `results.json` (every bin and confirm-by date); CSV vs SECOM loader on 600 real units | identical | passes |
 
-`pytest` runs 42 tests (`npm run test:py`).
+`pytest` runs 44 tests (`npm run test:py`).
 
 ## Results (measured)
 

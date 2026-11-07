@@ -13,6 +13,7 @@ const STEPS = [
   { id: 'model', op: '040', short: 'Model vs baseline' },
   { id: 'lead', op: '050', short: 'The one lead' },
   { id: 'know', op: '060', short: 'How we know' },
+  { id: 'solution', op: '070', short: 'The playbook' },
 ]
 
 export function App() {
@@ -29,8 +30,8 @@ export function App() {
   return <Story r={r} />
 }
 
-function Stamp({ kind, children }: { kind: 'fail' | 'pass' | 'hold' | 'void'; children: ReactNode }) {
-  return <span className={`stamp stamp-${kind}`}>{children}</span>
+function Stamp({ kind, children, bin }: { kind: 'fail' | 'pass' | 'hold' | 'void'; children: ReactNode; bin?: boolean }) {
+  return <span className={`stamp stamp-${kind}${bin ? ' stamp-bin' : ''}`}>{children}</span>
 }
 
 function Details({ children, label = 'Show details' }: { children: ReactNode; label?: string }) {
@@ -172,6 +173,20 @@ function Story({ r }: { r: Results }) {
   const cl = r.change_log
   const mcGap = Math.max(...pp.mc_check.map((c) => Math.abs(c.power_formula - c.power_mc))) * 100
 
+  /* ---- step 7: the playbook's four bins, counted from the pipeline ---- */
+  const bc = r.regime_screen.bucket_counts
+  const retest = r.regime_screen.leads.filter((l) => l.bucket === 'b_regime_proxy' && l.p_test_1s < 0.05
+    && Math.abs(l.delta_test) >= pp.min_detectable_delta_80).length
+  const bins = [
+    { kind: 'hold' as const, name: 'Walk to the line', n: r.regime_screen.strat_fdr_and_holdout_list.length,
+      rule: <>Separates fails inside a period and again on later units ({leadName}).</> },
+    { kind: 'fail' as const, name: 'Check the change records', n: bc.b_regime_proxy ?? 0,
+      rule: <>Tracks the date, not failures. {retest} still separate later fails, so re-test them.</> },
+    { kind: 'pass' as const, name: 'Confirm or drop by day N', n: bc.e_unconfirmed ?? 0,
+      rule: <>Day {Math.round(dayRange[0])} to day {Math.round(dayRange[1])} at this line's throughput, plus {bc.c_drifting ?? 0} drifting signal to re-chart weekly.</> },
+    { kind: 'void' as const, name: 'Drop', n: bc.d_noise ?? 0, rule: <>Noise.</> },
+  ]
+
   return (
     <>
       <div className="progress" aria-hidden="true"><span style={{ transform: `scaleX(${(activeIdx + 1) / STEPS.length})` }} /></div>
@@ -192,10 +207,14 @@ function Story({ r }: { r: Results }) {
         <main className="sheet">
           <header className="card-head">
             <h1>Yield Root-Cause Lens</h1>
-            <p className="lede">
-              A production line's yield jumped. This walks through which test signals actually point at failing units,
-              and which only point at the calendar.
-            </p>
+            <p className="hero-q">Yield moved. Which of {h.features_raw} test signals are worth walking to the line for?</p>
+            <ul className="hero-a">
+              <li>On {thousands(h.units)} real production units, yield jumped {Math.round(cp.shift_pts)} points on {fmtDay(cp.day, true)}: {Math.round(econ.before)} failing units per 1,000 dropped to {Math.round(econ.after)}.</li>
+              <li>{proxies} of the {r.regime_screen.leads.length} signals a standard screen flagged were just that date in disguise.</li>
+              <li>One lead held up on later units, and the standard screen had missed it.</li>
+            </ul>
+            <a className="hero-link" href="#solution">Here's the playbook <span aria-hidden="true">→</span></a>
+            <p className="hero-src">Real public line data (UCI SECOM, CC BY 4.0). Every number is read from the pipeline's output.</p>
             <dl className="fields">
               <div><dt>Units</dt><dd>{thousands(h.units)}</dd></div>
               <div><dt>Signals per unit</dt><dd>{h.features_raw}</dd></div>
@@ -388,7 +407,44 @@ function Story({ r }: { r: Results }) {
                 </div>
               ))}
             </div>
-            <p className="caption">42 automated tests. Equations, assumptions and limits are in the repository's method notes.</p>
+            <p className="caption">44 automated tests. Equations, assumptions and limits are in the repository's method notes.</p>
+          </Op>
+
+          <Op id="solution" op="070" title="The solution: a lead-triage playbook"
+            say={<>Give it a line's test log, one row per unit with a time, pass/fail and the signals. It returns the date yield moved and puts every lead into one of four bins.</>}
+            details={<>
+              <table className="spec">
+                <tbody>
+                  <tr><th>Walk to the line</th><td>within-period q &lt; 0.05 and one-sided p &lt; 0.05 on the later 30% of units, same direction</td></tr>
+                  <tr><th>Check the change records</th><td>pooled q &lt; 0.05 only, and |ρ| with time &gt; 0.3 or passes shift by |δ| ≥ 0.33 between periods. Re-test if later p &lt; 0.05 with |δ| ≥ {n2(pp.min_detectable_delta_80)}</td></tr>
+                  <tr><th>Confirm or drop by day N</th><td>within-period q &lt; 0.05, not yet on later units. N from Noether's sample size at {n2(pp.units_per_day, 1)} units a day and {n2(pp.post_change_fail_rate * 100, 2)}% fails</td></tr>
+                  <tr><th>Drop</th><td>none of the above</td></tr>
+                </tbody>
+              </table>
+              <p>The tool wraps the same functions that write this page's results; a test checks that every bin and every confirm-by date match. Rules, thresholds and the week-1 plan are in the repository's SOLUTION.md.</p>
+            </>}>
+            <div className="bins" role="table" aria-label="Lead bins on this line">
+              {bins.map((b) => (
+                <div className="bin-row" role="row" key={b.name}>
+                  <span role="cell"><Stamp kind={b.kind} bin>{b.name}</Stamp></span>
+                  <span role="cell" className="bin-n">{b.n}</span>
+                  <span role="cell" className="bin-rule">{b.rule}</span>
+                </div>
+              ))}
+            </div>
+            <ol className="playbook" aria-label="Playbook">
+              {[
+                ['Date it', 'One change point on the per-unit fail series, permutation-tested.'],
+                ['Split and screen inside each period', 'Compare fails with passes only within a period, never across the date.'],
+                ['Re-test on later units', 'Hold back the last 30% in time; re-test each lead in its training direction.'],
+                ['Bin every lead', 'Exactly one bin each, with a confirm-or-drop date on every open lead.'],
+                ['Monitor the new normal', 'Phase II CUSUM on fail rate; individuals charts on the walk-to-the-line leads.'],
+              ].map(([t, d], i) => (
+                <li key={t}><span className="pb-no">{i + 1}</span><span><b>{t}.</b> {d}</span></li>
+              ))}
+            </ol>
+            <pre className="cmd"><code>npm run triage   <span className="muted">→ triage.json</span></code></pre>
+            <p className="caption">This runs on public production data. In week 1 on a real line, I'd run it on one product's test history and hand over the sorted lead sheet.</p>
           </Op>
 
           <footer className="foot">

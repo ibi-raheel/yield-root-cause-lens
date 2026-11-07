@@ -24,7 +24,7 @@ SEED = 0
 MIN_SEG = 50
 WIDEN = 50            # units added on each side of the yield change-point location CI
 LARGE_DELTA = 0.474   # Romano et al. (2006) "large" Cliff's delta
-DRIFT_DELTA = 0.33    # Romano "medium": a level move between regimes worth calling drift
+DRIFT_DELTA = rc.DRIFT_DELTA  # Romano "medium": a level move between regimes worth calling drift
 N_PERM_ALIGN = 999
 VALUE_WINDOW_DAYS = 90
 COSTS = [10, 25, 50, 100, 250, 500]  # $ per failed unit, an explicit assumption (swept)
@@ -181,19 +181,9 @@ def main(secom_dir, res_path):
         d_post = cliff(v[post_tr][y[post_tr] == 1], v[post_tr][y[post_tr] == 0])
         ok = ~np.isnan(v[tr])
         rho = spearmanr(np.arange(len(tr))[ok], v[tr][ok]).statistic
-        within = S.loc[c, "q"] < 0.05 and np.sign(S.loc[c, "Z"]) == dirn
         holds = p_test < 0.05
         drift = max(abs(d_pass_regime), abs(d_pass_test)) >= DRIFT_DELTA
-        if within and holds:
-            bucket = "a_replicating"
-        elif within and drift:
-            bucket = "c_drifting"
-        elif within:
-            bucket = "e_unconfirmed"
-        elif abs(rho) > 0.3 or abs(d_pass_regime) >= DRIFT_DELTA:
-            bucket = "b_regime_proxy"
-        else:
-            bucket = "d_noise"
+        bucket = rc.classify_lead(S.loc[c, "q"] < 0.05, np.sign(S.loc[c, "Z"]) == dirn, holds, drift, rho, d_pass_regime)
         thr = {}
         for name, idx in [("pre_change_train", tr[regime[tr] == 0]), ("post_change_train", post_tr), ("test", te)]:
             vv, yy = v[idx], y[idx]

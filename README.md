@@ -1,5 +1,17 @@
 # Yield Root-Cause Lens
 
+**Question.** When a line's yield moves, which of hundreds of test signals are worth walking to the line for, and which
+are just the date the process changed, in disguise?
+
+**Answer, on 1,567 real production units.** Yield jumped 10 points on one date (145 to 44 failing units per 1,000).
+12 of the 22 signals a standard screen flagged were tracking that date, not failures. Comparing fails with passes
+inside each production period removed them and found the one lead that held up on later units, a lead the standard
+screen had missed. Every remaining open lead gets a confirm-or-drop date (22 to 63 days).
+
+**Solution.** A one-page lead-triage playbook and a small tool, `npm run triage`. Give it a line's test log and it
+returns the change date and sorts every lead into *walk to the line*, *check the change records*, *confirm or drop by
+day N*, or *drop*. See [SOLUTION.md](SOLUTION.md).
+
 Finds the date a production line's yield shifted and what moved with it, then ranks which of 590 test signals
 separate failing units inside each production regime, checks every lead for false discovery and against later units,
 and says how many days of data each remaining lead needs. It runs on real public line data.
@@ -72,7 +84,9 @@ the date the process changed, and how long it will take to confirm each lead.
   individuals-chart limits.
 - `pipeline/yrcl/ai.py` + `pipeline/run_ai.py`: stability selection, the regime-aware model, the Isolation Forest and
   Bernoulli CUSUMs with matched run lengths, and the day-block bootstrap on every AI-vs-baseline difference.
-- `tests/`: 42 pytest checks (hand calcs, library cross-checks, published CUSUM run lengths, planted-step recovery, a confounding simulation, Monte Carlo power, consistency of the real-data results).
+- `pipeline/triage.py`: the lead-triage CLI. It is a thin wrapper over the functions above (bins come from
+  `yrcl.rootcause.classify_lead`, the same rule that writes `results.json`). See [SOLUTION.md](SOLUTION.md).
+- `tests/`: 44 pytest checks (hand calcs, library cross-checks, published CUSUM run lengths, planted-step recovery, a confounding simulation, Monte Carlo power, consistency of the real-data results, and the triage CLI matching the pipeline bin for bin).
 - `src/`: a static Vite + React page that reads the precomputed JSON. No backend, no API keys.
 - [METHOD.md](METHOD.md): equations, assumptions, validation table and limitations.
 
@@ -83,7 +97,8 @@ mkdir -p ../_downloads/secom && curl -L -o ../_downloads/secom/secom.zip \
   https://archive.ics.uci.edu/static/public/179/secom.zip && unzip -o ../_downloads/secom/secom.zip -d ../_downloads/secom
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 npm run pipeline     # writes public/results.json (about 3.5 min)
-npm run test:py      # 42 tests
+npm run test:py      # 44 tests
+npm run triage       # lead sheet -> triage.json
 npm install && npm run dev
 ```
 
