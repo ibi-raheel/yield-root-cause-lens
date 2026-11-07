@@ -43,14 +43,18 @@ the date the process changed, and how long it will take to confirm each lead.
      model reaches held-out ROC-AUC 0.64 vs 0.53 when trained on all history (+0.11, 95% CI 0.03–0.20, averaged over three
      time cuts; +0.08 to +0.11 across solver seeds). On average it does **not** beat the single best within-regime signal
      (+0.06, CI −0.03 to 0.18). It does at the latest cut, which has the most in-regime fails (0.72 vs 0.49, +0.23, CI
-     0.05–0.45), but that is one cut of three.
+     0.05–0.45), but that is one cut of three. Adding a fourth, earlier cut keeps the verdict (+0.10 vs all history, CI
+     0.02–0.18; +0.04 vs the single signal, CI −0.05 to 0.11).
    - **Stability-selection root-cause ranker (loses).** L1 logistic over 100 day-blocked half-subsamples. Its top-10 signals
      replicate on later units less well than a plain Welch t ranking (mean signed held-out δ 0.016 vs 0.072, difference
      −0.056, CI −0.13 to 0.01) and a Mann-Whitney ranking (0.095). Fitting either ranker inside the regime helps more than
-     going multivariate.
+     going multivariate. Feeding each ranking's top 10 into the same small model does not change that (held-out ROC-AUC
+     0.51 vs 0.55).
    - **Isolation Forest change detector (loses).** Both detectors are calibrated to the same false-alarm rate. A Bernoulli CUSUM on
      pass/fail flags the 21 Aug change on 7 Aug, inside its location CI. The forest flags nothing until 15 Oct
-     (+1,177 units), because after the first 12 days units look more typical, not less.
+     (+1,177 units), because after the first 12 days units look more typical, not less. The CUSUM's early alarm also
+     comes with a caveat: the reference fail rate (21%) was unusually high, and in 99% of resamples its alarm lands
+     before the change, so it reacts to "lower than the reference" as much as to the step.
 
 ## How it works
 - `pipeline/yrcl/stats.py`: U statistic, Cliff's delta, BH, CUSUM and the change point, each written out and unit-tested
@@ -62,7 +66,7 @@ the date the process changed, and how long it will take to confirm each lead.
   individuals-chart limits.
 - `pipeline/yrcl/ai.py` + `pipeline/run_ai.py`: stability selection, the regime-aware model, the Isolation Forest and
   Bernoulli CUSUMs with matched run lengths, and the day-block bootstrap on every AI-vs-baseline difference.
-- `tests/`: 40 pytest checks (hand calcs, library cross-checks, published CUSUM run lengths, planted-step recovery, a confounding simulation, Monte Carlo power, consistency of the real-data results).
+- `tests/`: 42 pytest checks (hand calcs, library cross-checks, published CUSUM run lengths, planted-step recovery, a confounding simulation, Monte Carlo power, consistency of the real-data results).
 - `src/`: a static Vite + React page that reads the precomputed JSON. No backend, no API keys.
 - [METHOD.md](METHOD.md): equations, assumptions, validation table and limitations.
 
@@ -73,7 +77,7 @@ mkdir -p ../_downloads/secom && curl -L -o ../_downloads/secom/secom.zip \
   https://archive.ics.uci.edu/static/public/179/secom.zip && unzip -o ../_downloads/secom/secom.zip -d ../_downloads/secom
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 npm run pipeline     # writes public/results.json (about 3.5 min)
-npm run test:py      # 40 tests
+npm run test:py      # 42 tests
 npm install && npm run dev
 ```
 

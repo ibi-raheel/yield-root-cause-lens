@@ -118,3 +118,39 @@ def test_exported_ai_section_is_consistent():
     assert an["isolation_forest"]["arl0_sim"] >= an["target_arl0_units"]
     assert an["bernoulli_cusum"]["arl0_sim"] >= an["target_arl0_units"]
     assert an["reference_units"] < an["ci_lower_unit"] < an["change_unit"]
+    # sensitivity exports used by the docs
+    w = res["regime_model"]["sensitivity_with_50pct_cut"]
+    assert w["diff_vs_pooled"] == pytest.approx(w["auc_regime"] - w["auc_pooled"], abs=2e-4)
+    assert w["diff_vs_pooled_ci"][0] <= w["diff_vs_pooled_ci"][1]
+    b = an["bootstrap"]
+    assert 0 <= b["share_runs_bern_detection_before_change"] <= 1 - b["share_bern_no_detection"] + 1e-9
+
+
+def test_topk_model_is_fitted_on_training_rows_only_and_hand_auc():
+    from sklearn.metrics import roc_auc_score
+    from run_ai import topk_model_scores
+    # one informative column (0) and one noise column (1). Training rows 0..5, test rows 6..9.
+    A = np.array([[1, 0], [2, 1], [3, 0], [7, 1], [8, 0], [9, 1],      # train: fails are the high values
+                  [2, 5], [6, 5], [4, 5], [10, 5]], float)
+    y = np.array([0, 0, 0, 1, 1, 1, 0, 1, 1, 1])
+    tr, te = np.arange(6), np.arange(6, 10)
+    s = topk_model_scores(A, y, tr, te, [0])
+    # one column: the score is monotone increasing in column 0, so the held-out AUC is the AUC of the raw values
+    # test values 2 (pass) vs 6, 4, 10 (fails): every fail outranks the pass -> AUC = 3/3 = 1 by hand
+    assert roc_auc_score(y[te], s) == pytest.approx(1.0)
+    assert np.all(np.diff(s[np.argsort(A[te, 0])]) > 0)
+    # changing a test row cannot change the scores of the other test rows (nothing is fitted on test rows)
+    A2 = A.copy(); A2[9] = [-50, 99]
+    s2 = topk_model_scores(A2, y, tr, te, [0])
+    assert np.allclose(s[:3], s2[:3])
+
+
+@need_results
+def test_exported_predictive_check_is_consistent():
+    pc = json.loads(RESULTS.read_text())["ai"]["ranker"]["predictive_check"]
+    for row in pc["mean_over_cuts"]:
+        sub = [r_ for r_ in pc["per_cut"] if r_["k"] == row["k"]]
+        assert len(sub) == 4
+        for nm in ("ai", "t", "mwu", "ai_regime", "t_regime"):
+            assert row[nm] == pytest.approx(np.mean([r_[nm] for r_ in sub]), abs=2e-4)
+            assert 0 <= row[nm] <= 1

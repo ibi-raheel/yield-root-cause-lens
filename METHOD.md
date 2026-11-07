@@ -167,11 +167,15 @@ and, as a second baseline, the Mann-Whitney p ranking from §2. **Score:** the m
 signals, each signed by its training direction (so δ > 0 means the direction replicated on later units), plus the count
 reaching one-sided p < 0.05. A regime-aware pair was also declared: stability selection vs Welch t, both fitted only on
 the post-change units of the training window.
+*Added after this metric lost (exploratory, reported because it was run):* a predictive check, in case a multivariate
+ranker loses on marginal replication but picks a better joint set. The top-k of each ranking feeds the same small model,
+an L2 logistic (C = 0.1, class-weighted) fitted on that ranking's own training rows, scored by held-out ROC-AUC.
 
 **8b. Regime-aware failure model.** L1 logistic, C ∈ {0.01, 0.03, 0.1, 0.3} chosen by forward-chaining CV over whole
 days inside the training rows (ROC-AUC). It is trained on the post-change units of the training window only, and compared
 with (i) the same model trained on all training units and (ii) the single signal with the largest |Welch t| inside the
-post-change training units, median-imputed. Cuts at 60/70/80%. Metric: held-out ROC-AUC (PR-AUC also exported).
+post-change training units, median-imputed. Cuts at 60/70/80%. Metric: held-out ROC-AUC (PR-AUC also exported). A sensitivity run adds the 50% cut, where the
+post-change training window holds only 18 fails.
 
 **8c. Anomaly detector for the regime change.** An Isolation Forest (300 trees, 128 samples per tree) is fitted on the
 first 12 days of production (71 units, 19 Jul–1 Aug). Inputs are the 444 usable signals, median-imputed and scaled by
@@ -220,7 +224,7 @@ and the post-change stretch, with the fitted scores held fixed.
 | Stability selection on 60 noise columns with 2 planted effects (600 units) | planted pair ranked 1–2 with correct signs | passes |
 | CUSUM h calibration reaches the target ARL0 (iid Bernoulli, target 200) | smallest h with ARL0 ≥ target | passes |
 
-`pytest` runs 40 tests (`npm run test:py`).
+`pytest` runs 42 tests (`npm run test:py`).
 
 ## Results (measured)
 
@@ -288,13 +292,18 @@ and the post-change stretch, with the fitted scores held fixed.
     within-regime signal it does not win on average** (0.638 vs 0.574, +0.064, CI −0.031 to 0.181; +0.038 to +0.064 across
     seeds). It wins only at the 80% cut, which has the most post-change training data (908 units, 37 fails): 0.717 vs 0.486,
     +0.231 (0.049–0.447). That is one cut of three, so treat it as a hint that the model needs about 35+ in-regime fails,
-    not as a result.
+    not as a result. Adding the 50% cut (18 in-regime training fails) leaves the verdict unchanged: +0.105 against
+    all-history training (CI 0.024–0.177), +0.036 against the single signal (CI −0.049 to 0.115). At that cut alone the
+    single signal wins (0.629 vs 0.581).
   - *Stability-selection ranker: loses.* Pooled over four cuts at k = 10, the top-10 signals replicate with mean signed held-out
     δ = 0.016 (4 of 40 at p < 0.05), against 0.072 for the Welch t ranking (8 of 40) and 0.095 for the Mann-Whitney ranking
     (8 of 40). Differences −0.056 (CI −0.131 to 0.007) and −0.080 (−0.177 to 0.023). The k = 5 and k = 20 comparisons point
     the same way. The regime-aware pair also loses (0.057 vs 0.098, −0.041, CI −0.155 to 0.046; at k = 5, −0.125, CI −0.289
     to −0.003). Fitting either ranker inside the regime helps more than switching from univariate to multivariate:
-    Welch t rises from 0.072 to 0.098 and stability selection from 0.016 to 0.057.
+    Welch t rises from 0.072 to 0.098 and stability selection from 0.016 to 0.057. The exploratory predictive check
+    (top-k into the same small logistic, held-out ROC-AUC, mean over four cuts) does not rescue it: at k = 10, 0.512 for
+    stability selection vs 0.546 for Welch t and 0.557 for Mann-Whitney; inside the regime, 0.560 vs 0.604. The univariate
+    rankings win at k = 5 and k = 20 as well. No CI is reported for this check because it cannot change the verdict.
   - *Isolation Forest change detector: loses.* At the same in-control run length (500 units), the Bernoulli CUSUM on pass/fail
     alarms on 7 Aug (unit 148), inside the change-point location CI, after one false alarm on 5 Aug. The batch CUSUM alarms on
     20 Aug (32 units before the estimate). The forest's CUSUM does not alarm until 15 Oct (+1,177 units). Across 1,000
@@ -302,6 +311,10 @@ and the post-change stretch, with the fitted scores held fixed.
     (CI 191–1,376) when both detect. The Bernoulli CUSUM false-alarms before 6 Aug in 48% of resamples. **Why the forest
     misses:** after the reference window the units look *more* typical, not less (mean z −0.59 before the change, −0.15 after).
     The first 12 days were the unusual period, so "far from the reference" does not mean "new regime" on this line.
+    **The baseline's win needs the same caveat.** The fail rate was 21.1% in the reference window, 5.3% from 2 to 6 Aug,
+    14.7% from 6 Aug to the change and 4.4% after it. In 99.4% of resamples the Bernoulli CUSUM's first alarm lands
+    before the estimated change, so it is reacting to "lower than the reference", which was already true from early
+    August, more than to the 21 Aug step itself. Neither detector, as set up here, is a clean early warning for that step.
 
 ## Week-1 plan on a line like this
 

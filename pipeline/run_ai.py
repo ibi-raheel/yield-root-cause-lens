@@ -59,6 +59,14 @@ def boot_ci(vals, lo=0.025, hi=0.975):
     return [r(np.quantile(v, lo), 4), r(np.quantile(v, hi), 4)], r((v <= 0).mean(), 4)
 
 
+def topk_model_scores(A, y, tr, te, cols, C=0.1):
+    """Fit an L2 logistic on columns `cols` of the training rows only (median-impute, scale) and score `te`."""
+    med, mu, sd = ai.standardize_fit(A[tr][:, cols])
+    m = LogisticRegression(C=C, class_weight="balanced", max_iter=2000)
+    m.fit(ai.standardize_apply(A[tr][:, cols], med, mu, sd), y[tr])
+    return m.decision_function(ai.standardize_apply(A[te][:, cols], med, mu, sd))
+
+
 # ============================================================ 1. root-cause ranker
 def ranker_section(X, y, ts, day_id):
     n = len(y)
@@ -88,6 +96,14 @@ def ranker_section(X, y, ts, day_id):
                                                          "ai_regime": (o_air, s_air), "t_regime": (o_tr, s_tr)},
                         prob=prob, tau=tau_tr)
         te = np.arange(c, n)
+        # added after the primary metric lost: predictive ranking quality. The top-k of each ranking feeds the same
+        # small model (L2 logistic, C = 0.1, class-weighted, fitted on that ranking's own training rows), scored by
+        # held-out ROC-AUC. A multivariate ranker could lose on marginal replication yet pick a better joint set.
+        pred_rows = store[f].setdefault("pred", {})
+        for k in KS:
+            for nm, (o, s) in store[f]["rankings"].items():
+                trw = np.arange(tau_tr, c) if nm.endswith("_regime") else tr
+                pred_rows[(k, nm)] = roc_auc_score(y[te], topk_model_scores(A, y, trw, te, o[:k]))
         for k in KS:
             res_k = {}
             for name, (o, s) in store[f]["rankings"].items():  # noqa
@@ -154,12 +170,19 @@ def ranker_section(X, y, ts, day_id):
             pr[f"diff_{b}_ci"], pr[f"diff_{b}_p_le0"] = boot_ci(pooled[(k, b)])
         pr["slots"] = k * len(CUT_FRACS)
         pooled_rows.append(pr)
+    pred_check = {"model": "L2 logistic on the top-k signals, C = 0.1, class-weighted; held-out ROC-AUC",
+                  "status": "exploratory, added after the primary metric lost; no CI because it does not change the verdict",
+                  "per_cut": [{"cut_frac": f, "k": k, **{nm: r(store[f]["pred"][(k, nm)], 4) for nm in NAMES}}
+                              for f in CUT_FRACS for k in KS]}
+    pred_check["mean_over_cuts"] = [{"k": k, **{nm: r(np.mean([store[f]["pred"][(k, nm)] for f in CUT_FRACS]), 4)
+                                               for nm in NAMES}} for k in KS]
     S = store[PRIMARY_CUT]
     top_stab = [{"feature": S["cols"][j], "selection_prob": r(S["prob"][j], 2)} for j in S["rankings"]["ai"][0][:15]]
     return {"cut_fracs": CUT_FRACS, "primary_cut": PRIMARY_CUT, "ks": KS, "primary_k": PRIMARY_K,
             "n_resamples": N_STAB, "C_grid": list(CS), "subsample": "half of training days, whole days",
             "metric": "mean held-out Cliff's delta of the top-k, signed by the training direction",
-            "per_cut": rows, "pooled": pooled_rows, "top_stability_primary": top_stab}, store
+            "per_cut": rows, "pooled": pooled_rows, "predictive_check": pred_check,
+            "top_stability_primary": top_stab}, store
 
 
 # ============================================================ 2. regime-aware model
@@ -264,8 +287,47 @@ def regime_section(X, y, ts, day_id, store):
         sens.append({"seed": sd_, "auc_regime_mean": r(np.mean(a_r), 4), "auc_pooled_mean": r(np.mean(a_p), 4),
                      "diff_vs_pooled": r(np.mean(a_r) - np.mean(a_p), 4),
                      "diff_vs_single": r(np.mean(a_r) - mean_row["auc_single"], 4)})
+    # sensitivity: add the 50% cut (used by the ranker) to the regime model's cuts. At 50% the post-change training
+    # window has only 18 fails. Same bootstrap scheme, mean over the four cuts.
+    P4 = dict(preds)
+    S5 = store[CUT_FRACS[0]]
+    c5, A5, t5 = S5["cut"], S5["A"], S5["tau"]
+    te5 = np.arange(c5, n)
+    o5, s5 = ai.t_ranking(A5[t5:c5], y[t5:c5])
+    j5 = o5[0]
+    med5 = np.nanmedian(A5[t5:c5][:, j5])
+    P4[CUT_FRACS[0]] = dict(te=te5, reg=l1_fit_predict(A5[t5:c5], y[t5:c5], A5[te5], day_id[t5:c5])[0],
+                            pool=l1_fit_predict(A5[:c5], y[:c5], A5[te5], day_id[:c5])[0],
+                            one=s5[j5] * np.where(np.isnan(A5[te5][:, j5]), med5, A5[te5][:, j5]))
+    auc5 = {k: roc_auc_score(y[te5], P4[CUT_FRACS[0]][k]) for k in ("reg", "pool", "one")}
+    m4 = {k: float(np.mean([roc_auc_score(y[P["te"]], P[k]) for P in P4.values()])) for k in ("reg", "pool", "one")}
+    rng4 = np.random.default_rng(SEED + 8)
+    days4 = np.unique(day_id[c5:])
+    mem4 = {d: np.where(day_id == d)[0] for d in days4}
+    b4 = {"pool": [], "one": []}
+    for _ in range(N_BOOT):
+        ub = np.concatenate([mem4[d] for d in rng4.choice(days4, len(days4), replace=True)])
+        cur = {"pool": [], "one": []}
+        for P in P4.values():
+            c = P["te"][0]
+            u = ub[ub >= c] - c
+            yb = y[P["te"]][u]
+            if yb.sum() < 2 or yb.sum() == len(yb):
+                break
+            a_reg = roc_auc_score(yb, P["reg"][u])
+            cur["pool"].append(a_reg - roc_auc_score(yb, P["pool"][u]))
+            cur["one"].append(a_reg - roc_auc_score(yb, P["one"][u]))
+        for b in b4:
+            if len(cur[b]) == len(P4):
+                b4[b].append(float(np.mean(cur[b])))
+    with50 = {"cut50_auc_regime": r(auc5["reg"], 4), "cut50_auc_pooled": r(auc5["pool"], 4),
+              "cut50_auc_single": r(auc5["one"], 4), "cut50_train_regime_fails": int(y[t5:c5].sum()),
+              "auc_regime": r(m4["reg"], 4), "auc_pooled": r(m4["pool"], 4), "auc_single": r(m4["one"], 4),
+              "diff_vs_pooled": r(m4["reg"] - m4["pool"], 4), "diff_vs_single": r(m4["reg"] - m4["one"], 4)}
+    with50["diff_vs_pooled_ci"], with50["diff_vs_pooled_p_le0"] = boot_ci(b4["pool"])
+    with50["diff_vs_single_ci"], with50["diff_vs_single_p_le0"] = boot_ci(b4["one"])
     return {"model": "L1 logistic, C by forward-chaining CV over whole days", "per_cut": rows, "mean_over_cuts": mean_row,
-            "solver_seed_sensitivity": sens}
+            "solver_seed_sensitivity": sens, "sensitivity_with_50pct_cut": with50}
 
 
 # ============================================================ 3. anomaly detection
@@ -350,6 +412,7 @@ def anomaly_section(X, y, ts, day_id, tau, loc_lo_day):
     pre_idx, post_idx = np.arange(R, tau), np.arange(tau, n)
     rng = np.random.default_rng(SEED + 5)
     diffs, fa_if, fa_b, miss_if, miss_b = [], 0, 0, 0, 0
+    pre_det_if, pre_det_b = 0, 0   # "detections" that land on resampled pre-change units (index < tau)
     for _ in range(N_BOOT):
         pick_pre = ai.block_resample_series(pre_idx, blk[pre_idx], rng, len(pre_idx))
         pick_post = ai.block_resample_series(post_idx, blk[post_idx], rng, len(post_idx))
@@ -361,6 +424,8 @@ def anomaly_section(X, y, ts, day_id, tau, loc_lo_day):
         fa_if += len(res[0][0]) > 0; fa_b += len(res[1][0]) > 0
         if res[0][1] is None: miss_if += 1
         if res[1][1] is None: miss_b += 1
+        pre_det_if += res[0][1] is not None and res[0][1] < tau
+        pre_det_b += res[1][1] is not None and res[1][1] < tau
         if res[0][1] is not None and res[1][1] is not None:
             diffs.append(float(res[0][1] - res[1][1]))
     d = np.array(diffs)
@@ -368,7 +433,12 @@ def anomaly_section(X, y, ts, day_id, tau, loc_lo_day):
                         "delay_diff_ci": [r(np.quantile(d, 0.025), 1), r(np.quantile(d, 0.975), 1)],
                         "share_if_earlier": r((d < 0).mean(), 3),
                         "share_runs_if_false_alarm": r(fa_if / N_BOOT, 3), "share_runs_bern_false_alarm": r(fa_b / N_BOOT, 3),
-                        "share_if_no_detection": r(miss_if / N_BOOT, 3), "share_bern_no_detection": r(miss_b / N_BOOT, 3)}
+                        "share_if_no_detection": r(miss_if / N_BOOT, 3), "share_bern_no_detection": r(miss_b / N_BOOT, 3),
+                        "share_runs_if_detection_before_change": r(pre_det_if / N_BOOT, 3),
+                        "share_runs_bern_detection_before_change": r(pre_det_b / N_BOOT, 3)}
+    # fail rate by stretch: what each detector is actually reacting to
+    out["fail_rate_by_stretch"] = {"reference": r(y[:R].mean(), 4), "monitored_before_ci": r(y[R:L].mean(), 4),
+                                   "ci_to_change": r(y[L:tau].mean(), 4), "post_change": r(y[tau:].mean(), 4)}
     # score trace for inspection: daily mean z
     dd = pd.DataFrame({"day": ts.dt.date.astype(str), "z": z, "fail": y}).groupby("day").agg(z=("z", "mean"), fails=("fail", "sum"), units=("fail", "size")).reset_index()
     out["mean_z_reference_oos"] = r(z[:R].mean(), 3)
@@ -400,6 +470,7 @@ def main(secom_dir, res_path):
         print({k: v for k, v in rw.items() if not k.endswith("_top")})
     for rw in ranker["pooled"]:
         print(rw)
+    print(ranker["predictive_check"]["mean_over_cuts"])
     print(ranker["top_stability_primary"][:10])
     for rw in regime["per_cut"]:
         print(rw)
