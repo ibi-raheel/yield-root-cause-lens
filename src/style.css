@@ -258,12 +258,16 @@ h2 {
 .score { font-family: var(--f-mono); font-size: 28px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
 .score small { font-size: 14px; color: var(--ink-3); font-weight: 500; }
 .pairgrid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+.pairgrid { position: relative; }
 .cell {
-  aspect-ratio: 1; border: 1px solid var(--rule-strong); background: var(--card);
-  display: grid; place-items: center;
+  aspect-ratio: 1; border: 1px solid var(--rule-strong); background: transparent;
   transition: background-color 220ms var(--ease-out), border-color 220ms var(--ease-out);
 }
-.cell svg { width: 70%; height: 70%; stroke: var(--red); stroke-width: 1.4; stroke-linecap: round; opacity: 0.7; }
+.coin { position: absolute; left: -5px; right: -5px; top: 50%; border-top: 1.5px dashed var(--red); pointer-events: none; }
+.coin b {
+  position: absolute; right: -2px; top: 0; transform: translate(100%, -50%); padding-left: 4px;
+  font-family: var(--f-mono); font-size: 11px; font-weight: 500; color: var(--red);
+}
 .pairgrid.model .cell.ok { background: var(--blue); border-color: var(--blue); }
 .pairgrid.base .cell.ok { background: var(--graphite); border-color: var(--graphite); }
 
@@ -280,10 +284,14 @@ h2 {
 /* ---------- step 6: sign-off ---------- */
 .signoff { border-top: 2px solid var(--ink); font-size: 15px; }
 .signoff-row {
-  display: grid; grid-template-columns: 1fr 100px 100px 56px; gap: 10px; align-items: center;
+  display: grid; grid-template-columns: 1fr 120px 150px 64px; gap: 10px; align-items: center;
   padding: 7px 0; border-bottom: 1px solid var(--rule);
 }
 .signoff-row > span:last-child { text-align: center; }
+.signoff-row .num { white-space: nowrap; }
+.signoff-head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-3); font-weight: 600; padding: 6px 0; border-bottom-color: var(--rule-strong); }
+.signoff-head .num { font-family: var(--f-sans); }
+.change-caret { fill: var(--red); }
 
 /* ---------- details ---------- */
 .details { margin-top: 22px; border-top: 1px dashed var(--rule-strong); }
@@ -343,6 +351,8 @@ h2 {
   .log-row > :nth-child(5) { display: none; }
   .pairs { gap: 14px; }
   .pairgrid { gap: 2px; }
+  .coin b { display: none; }
+  .coin { left: -3px; right: -3px; }
   .score { font-size: 22px; }
   .pairs figcaption { flex-direction: column; align-items: flex-start; gap: 2px; }
   .fields dd { white-space: normal; }
@@ -350,9 +360,10 @@ h2 {
   .toggle button { flex: 1 1 100%; border-right: 0; border-bottom: 1px solid var(--rule-strong); text-align: left; }
   .toggle button:last-child { border-bottom: 0; }
   .verdict { flex-direction: column; align-items: flex-start; gap: 10px; }
-  .signoff-row { grid-template-columns: 1fr auto 44px; font-size: 13px; }
+  .signoff-row { grid-template-columns: 1fr 122px 54px; gap: 8px; font-size: 13px; }
   .signoff-row .num { white-space: nowrap; }
   .signoff-row > :nth-child(2) { display: none; }
+  .signoff-head { letter-spacing: 0.03em; font-size: 10px; }
   .foot { padding: 24px 16px 32px; }
 }
 

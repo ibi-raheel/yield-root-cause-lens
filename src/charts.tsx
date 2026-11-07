@@ -180,13 +180,14 @@ export function SplitScrubber({ curve, split, setSplit, maxUnit, dates, changeUn
         ))}
         {ticks.map((c) => <text key={c.unit} x={x(c.unit)} y={H - 4} textAnchor="middle" className="ax-label">{fmtDay(dates[c.unit])}</text>)}
         <line x1={x(changeUnit)} x2={x(changeUnit)} y1={m.t} y2={H - m.b} className="mark-change thin" />
+        <path d={`M${x(changeUnit)} ${H - m.b + 1}l5 7h-10z`} className="change-caret" />
         <path d={path} className="curve" />
         <line x1={sx} x2={sx} y1={m.t - 4} y2={H - m.b} className="cursor" />
       </svg>
       <input
         type="range" min={minU} max={maxU} step={1} value={split}
         onChange={(e) => setSplit(+e.target.value)}
-        style={{ left: m.l, width: w - m.l - m.r }}
+        style={{ left: m.l - 11, width: w - m.l - m.r + 22 }}
         aria-label="Split date"
         aria-valuetext={`Split on ${fmtDay(dates[split], true)}`}
       />
@@ -292,10 +293,9 @@ export function PairGrid({ auc, label, variant = 'model' }: { auc: number; label
   return (
     <div className={'pairgrid ' + variant} role="img" aria-label={`${label}: ranks the failing unit riskier in ${right} of 100 pairs.`}>
       {Array.from({ length: 100 }, (_, i) => (
-        <span key={i} className={'cell' + (i < right ? ' ok' : '')} style={{ transitionDelay: `${Math.abs(i - 55) * 4}ms` }}>
-          {i >= right && <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 2.5l5 5M7.5 2.5l-5 5" /></svg>}
-        </span>
+        <span key={i} className={'cell' + (i < right ? ' ok' : '')} style={{ transitionDelay: `${Math.abs(i - 55) * 4}ms` }} />
       ))}
+      <span className="coin" aria-hidden="true"><b>50</b></span>
     </div>
   )
 }
@@ -314,7 +314,12 @@ export function CutStrip({ rows }: { rows: { label: string; sub: string; model: 
       <svg width={w} height={H} role="img" aria-label="Held-out ROC-AUC by time cut, trained model against the selected baseline.">
         {[0.4, 0.5, 0.6, 0.7, 0.8].map((t) => (
           <g key={t}>
-            <line x1={x(t)} x2={x(t)} y1={0} y2={H - 22} className={t === 0.5 ? 'chance' : 'grid'} />
+            {narrow
+              ? rows.map((_, i) => {
+                const cy = 34 + i * rowH
+                return <line key={i} x1={x(t)} x2={x(t)} y1={cy - 9} y2={i === rows.length - 1 ? H - 22 : cy + rowH - 30} className={t === 0.5 ? 'chance' : 'grid'} />
+              })
+              : <line x1={x(t)} x2={x(t)} y1={0} y2={H - 22} className={t === 0.5 ? 'chance' : 'grid'} />}
             <text x={x(t)} y={H - 6} textAnchor="middle" className="ax-label">{t === 0.5 ? '0.5 chance' : t.toFixed(1)}</text>
           </g>
         ))}
@@ -350,7 +355,17 @@ export function PowerCurve({ curve, leads, focus, windowDays, mdd, testFails }: 
   const m = { l: 44, r: 16, t: 16, b: 34 }
   const x = lin(0.15, 0.65, m.l, w - m.r)
   const y = lin(0, 130, H - m.b, m.t)
-  const path = curve.map((c, i) => `${i ? 'L' : 'M'}${x(c.delta).toFixed(1)} ${y(c.days).toFixed(1)}`).join('')
+  const path = monotonePath(curve.map((c) => [x(c.delta), y(c.days)] as [number, number]))
+  const groups = useMemo(() => {
+    const out: { px: number; py: number; names: string[] }[] = []
+    for (const l of [...leads].sort((a, b) => a.delta - b.delta)) {
+      const px = x(l.delta), py = y(l.days)
+      const g = out.find((o) => Math.abs(o.px - px) < 16 && Math.abs(o.py - py) < 14)
+      if (g) g.names.push(l.feature)
+      else out.push({ px, py, names: [l.feature] })
+    }
+    return out
+  }, [leads, w])
   return (
     <div className="chart" ref={ref}>
       <svg width={w} height={H} role="img" aria-label="Days of production needed to confirm a lead, by its effect size." onPointerLeave={() => setTip(null)}>
@@ -365,17 +380,18 @@ export function PowerCurve({ curve, leads, focus, windowDays, mdd, testFails }: 
         <line x1={m.l} x2={w - m.r} y1={y(windowDays)} y2={y(windowDays)} className="window" />
         <text x={w - m.r} y={y(windowDays) - 5} textAnchor="end" className="ax-label">later-unit window ≈ {windowDays} days</text>
         <path d={path} className="curve" />
-        {leads.map((l, i) => {
-          const px = x(l.delta), py = y(l.days)
-          const nPrior = leads.filter((o, j) => j < i && Math.abs(x(o.delta) - px) < 30 && Math.abs(y(o.days) - py) < 16).length
-          const crowded = nPrior > 0
-          const below = l.days < windowDays + 8
-          return (
+        {leads.map((l) => (
           <g key={l.feature} onPointerEnter={() => setTip({ x: x(l.delta), y: y(l.days), body: <><b>{l.feature}</b><span>training δ {n2(l.delta)}</span><span>{n2(l.days, 1)} days to confirm</span>{l.weak && <span>test window already argues against it</span>}</> })}>
             <circle cx={x(l.delta)} cy={y(l.days)} r={10} className="hit" />
             <circle cx={x(l.delta)} cy={y(l.days)} r={4.5} className={l.weak ? 'dot-pooled' : 'dot-within'} />
-            {!narrow && <text x={px + (crowded ? -8 : 8)} y={(below ? py + 16 : py - 7) + Math.max(0, nPrior - 1) * 13} textAnchor={crowded ? 'end' : 'start'} className="ax-label">{l.feature}</text>}
           </g>
+        ))}
+        {!narrow && groups.map((g) => {
+          const below = g.py > y(windowDays) - 30
+          return (
+            <text key={g.names.join()} x={g.px + 9} y={below ? g.py + 17 : g.py - 9} className="ax-label halo" pointerEvents="none">
+              {g.names.join(' · ')}
+            </text>
           )
         })}
         <g onPointerEnter={() => setTip({ x: x(focus.delta), y: y(focus.days), body: <><b>{focus.feature}</b><span>training δ {n2(focus.delta)}</span><span>{n2(focus.days, 1)} days to confirm</span></> })}>
@@ -389,6 +405,23 @@ export function PowerCurve({ curve, leads, focus, windowDays, mdd, testFails }: 
       <TipBox tip={tip} width={w} />
     </div>
   )
+}
+
+/** Monotone cubic (Fritsch-Carlson) through points sorted by x: no overshoot between planned values. */
+function monotonePath(pts: [number, number][]) {
+  const n = pts.length
+  if (n < 3) return pts.map(([px, py], i) => `${i ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`).join('')
+  const dx = [], sl = [] as number[]
+  for (let i = 0; i < n - 1; i++) { dx.push(pts[i + 1][0] - pts[i][0]); sl.push((pts[i + 1][1] - pts[i][1]) / dx[i]) }
+  const t = [sl[0]]
+  for (let i = 1; i < n - 1; i++) t.push(sl[i - 1] * sl[i] <= 0 ? 0 : (3 * (dx[i - 1] + dx[i])) / ((2 * dx[i] + dx[i - 1]) / sl[i - 1] + (dx[i] + 2 * dx[i - 1]) / sl[i]))
+  t.push(sl[n - 2])
+  let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i] / 3
+    d += `C${(pts[i][0] + h).toFixed(1)} ${(pts[i][1] + t[i] * h).toFixed(1)} ${(pts[i + 1][0] - h).toFixed(1)} ${(pts[i + 1][1] - t[i + 1] * h).toFixed(1)} ${pts[i + 1][0].toFixed(1)} ${pts[i + 1][1].toFixed(1)}`
+  }
+  return d
 }
 
 /* ---------- step rail visibility ---------- */

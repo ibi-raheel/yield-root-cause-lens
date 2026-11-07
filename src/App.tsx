@@ -81,6 +81,10 @@ function Story({ r }: { r: Results }) {
     }
     return out
   }, [r])
+  const logDecimals = useMemo(() => logSignals.map((_, j) => {
+    const peak = Math.max(...logRows.map((row) => Math.abs(row.v[j] ?? 0)))
+    return peak >= 1000 ? 0 : peak >= 1 ? 2 : 4
+  }), [logRows])
 
   /* ---- step 3: live split ---- */
   const leadSet = new Set(r.regime_screen.leads.map((l) => l.feature))
@@ -166,6 +170,7 @@ function Story({ r }: { r: Results }) {
   const l1 = models['L1 logistic'], hgb = models['Gradient boosting']
   const econ = pp.economics.fails_per_1000
   const cl = r.change_log
+  const mcGap = Math.max(...pp.mc_check.map((c) => Math.abs(c.power_formula - c.power_mc))) * 100
 
   return (
     <>
@@ -215,7 +220,7 @@ function Story({ r }: { r: Results }) {
                 <div className="log-row" role="row" key={row.i}>
                   <span role="cell" className="serial">U-{String(row.i + 1).padStart(4, '0')}</span>
                   <span role="cell">{fmtDay(row.day)}</span>
-                  {row.v.map((v, j) => <span key={j} role="cell" className="num">{v == null ? '—' : fmtVal(v)}</span>)}
+                  {row.v.map((v, j) => <span key={j} role="cell" className="num">{v == null ? '—' : v.toFixed(logDecimals[j])}</span>)}
                   <span role="cell">{row.y === 1 ? <Stamp kind="fail">Fail</Stamp> : <Stamp kind="pass">Pass</Stamp>}</span>
                 </div>
               ))}
@@ -270,7 +275,7 @@ function Story({ r }: { r: Results }) {
               <span>signals still separate fails when split at <b>{fmtDay(dates[split], true)}</b></span>
               {split !== cp.unit_index && <button type="button" className="btn-link" onClick={() => setSplit(cp.unit_index)}>Back to {fmtDay(cp.day)}</button>}
             </div>
-            <p className="caption cap-tight">How many signals keep their effect, for every split date. The dashed red line is the yield change.</p>
+            <p className="caption cap-tight">Signals that keep their effect, at every split date. The red caret is the yield change.</p>
             <SplitScrubber curve={curve} split={split} setSplit={setSplit} maxUnit={maxSplit} dates={dates} changeUnit={cp.unit_index} total={rows.length} />
             <div className="legend" aria-hidden="true">
               <span><i className="lg-dot pooled" />plain effect, all units</span>
@@ -308,7 +313,7 @@ function Story({ r }: { r: Results }) {
                 </button>
               ))}
             </div>
-            <p className="caption">Each square is one failing and one passing later unit, marked when the score calls the failing one riskier. A coin flip marks 50.</p>
+            <p className="caption">Each square is one failing and one passing later unit, filled when the score calls the failing one riskier. A coin flip fills 50, the dashed line.</p>
             <div className="pairs">
               <figure>
                 <figcaption><span className="who model">Regime-aware model</span><span className="score">{Math.round(rm.mean_over_cuts.auc_regime * 100)}<small>/100</small></span></figcaption>
@@ -365,12 +370,16 @@ function Story({ r }: { r: Results }) {
               </ul>
             </>}>
             <div className="signoff" role="table" aria-label="Validation checks">
+              <div className="signoff-row signoff-head" role="row">
+                <span role="columnheader">Check</span><span role="columnheader" className="num">Expected</span>
+                <span role="columnheader" className="num">Measured</span><span role="columnheader">Result</span>
+              </div>
               {[
-                ['Yield by hand, 1463 / 1567', '93.364%', `${h.yield_pct}%`],
-                ['Rank test vs SciPy, 20 cases', 'equal', 'err < 1e-9'],
+                [`Yield by hand, ${h.passes} / ${h.units}`, `${n2((100 * h.passes) / h.units, 3)}%`, `${n2(h.yield_pct, 3)}%`],
+                ['Rank test vs SciPy, 20 cases', 'equal', 'rel. err < 1e-9'],
                 ['CUSUM run length vs published 10.4', '±0.6', 'within'],
                 ['Trend-only signal, 500 lines', '≈5% false', `${n2(r.regime_screen.simulation.fp_stratified * 100, 1)}%`],
-                ['Power formula vs Monte Carlo', 'few points', 'within 3'],
+                [`Power formula vs Monte Carlo, ${pp.mc_check.length} effects`, 'a few points', `${n2(mcGap, 1)} points`],
                 ['Fitting sees training rows only', 'always', 'enforced'],
               ].map(([check, want, got]) => (
                 <div className="signoff-row" role="row" key={check}>
@@ -392,10 +401,6 @@ function Story({ r }: { r: Results }) {
   )
 }
 
-function fmtVal(v: number) {
-  const a = Math.abs(v)
-  return a >= 1000 ? v.toFixed(0) : a >= 10 ? v.toFixed(2) : v.toFixed(4)
-}
 function fmtQ(q: number) {
   return q < 0.001 ? '<0.001' : q.toFixed(3)
 }
