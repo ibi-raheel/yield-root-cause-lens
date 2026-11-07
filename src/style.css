@@ -91,6 +91,8 @@ h1 {
 .hero-a { margin: 0 0 16px; padding: 0; list-style: none; max-width: 60ch; font-size: 17px; color: var(--ink-2); }
 .hero-a li { position: relative; padding: 4px 0 4px 18px; text-wrap: pretty; }
 .hero-a li::before { content: ''; position: absolute; left: 2px; top: 0.95em; width: 8px; border-top: 1.5px solid var(--red); }
+.hero-s { margin: 0 0 14px; max-width: 60ch; font-size: 17px; color: var(--ink); text-wrap: pretty; }
+.hero-s b { font-weight: 750; }
 .hero-link {
   display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; margin: 2px 0 10px;
   border: 1.5px solid var(--ink); font-weight: 650; font-size: 15px; font-variation-settings: 'wdth' 85;
@@ -397,7 +399,7 @@ h2 {
   .signoff-row > :nth-child(2) { display: none; }
   .signoff-head { letter-spacing: 0.03em; font-size: 10px; }
   .foot { padding: 24px 16px 32px; }
-  .hero-a { font-size: 16px; }
+  .hero-a, .hero-s { font-size: 16px; }
   .bin-row { grid-template-columns: 1fr 40px; gap: 6px 10px; }
   .bin-rule { grid-column: 1 / -1; padding-left: 6px; font-size: 14px; }
 }

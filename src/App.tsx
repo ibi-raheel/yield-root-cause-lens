@@ -211,9 +211,10 @@ function Story({ r }: { r: Results }) {
             <ul className="hero-a">
               <li>On {thousands(h.units)} real production units, yield jumped {Math.round(cp.shift_pts)} points on {fmtDay(cp.day, true)}: {Math.round(econ.before)} failing units per 1,000 dropped to {Math.round(econ.after)}.</li>
               <li>{proxies} of the {r.regime_screen.leads.length} signals a standard screen flagged were just that date in disguise.</li>
-              <li>One lead held up on later units, and the standard screen had missed it.</li>
+              <li>One candidate lead held up on later units, and the standard screen had missed it.</li>
             </ul>
-            <a className="hero-link" href="#solution">Here's the playbook <span aria-hidden="true">→</span></a>
+            <p className="hero-s"><b>Solution:</b> a triage playbook and tool. It dates the move and puts every lead in one bin: walk to the line, check the change records, confirm or drop by a set day, or drop.</p>
+            <a className="hero-link" href="#solution">See the playbook <span aria-hidden="true">→</span></a>
             <p className="hero-src">Real public line data (UCI SECOM, CC BY 4.0). Every number is read from the pipeline's output.</p>
             <dl className="fields">
               <div><dt>Units</dt><dd>{thousands(h.units)}</dd></div>
@@ -444,7 +445,7 @@ function Story({ r }: { r: Results }) {
               ))}
             </ol>
             <pre className="cmd"><code>npm run triage   <span className="muted">→ triage.json</span></code></pre>
-            <p className="caption">This runs on public production data. In week 1 on a real line, I'd run it on one product's test history and hand over the sorted lead sheet.</p>
+            <p className="caption">Measured here on public production data. In week 1 on a real line, I'd run it on one product's test history, check the bins against its change records, and hand over the sorted lead sheet.</p>
           </Op>
 
           <footer className="foot">

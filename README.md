@@ -5,7 +5,7 @@ are just the date the process changed, in disguise?
 
 **Answer, on 1,567 real production units.** Yield jumped 10 points on one date (145 to 44 failing units per 1,000).
 12 of the 22 signals a standard screen flagged were tracking that date, not failures. Comparing fails with passes
-inside each production period removed them and found the one lead that held up on later units, a lead the standard
+inside each production period removed them and found one candidate lead that held up on later units, which the standard
 screen had missed. Every remaining open lead gets a confirm-or-drop date (22 to 63 days).
 
 **Solution.** A one-page lead-triage playbook and a small tool, `npm run triage`. Give it a line's test log and it
