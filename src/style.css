@@ -352,7 +352,7 @@ h2 {
 
 /* ---------- footer ---------- */
 .foot { padding: 28px 40px 36px; font-size: 13px; color: var(--ink-3); }
-.foot p { margin: 0 0 8px; max-width: 70ch; }
+.foot p { margin: 0 0 8px; max-width: 70ch; overflow-wrap: anywhere; }
 .foot .more { margin-top: 18px; font-size: 18px; color: var(--ink); font-weight: 600; font-variation-settings: 'wdth' 85; }
 
 /* ---------- small screens ---------- */

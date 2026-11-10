@@ -449,7 +449,8 @@ function Story({ r }: { r: Results }) {
           </Op>
 
           <footer className="foot">
-            <p>Data: SECOM dataset, UCI Machine Learning Repository (2008), doi:10.24432/C54305, licensed CC BY 4.0. Real production test data; no synthetic values on this page.</p>
+            <p>Data: SECOM dataset, UCI Machine Learning Repository (2008), <a href="https://doi.org/10.24432/C54305">doi:10.24432/C54305</a>, licensed <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Real production test data; no synthetic values on this page.</p>
+            <p>Code, method and tests: <a href="https://github.com/ibi-raheel/yield-root-cause-lens">github.com/ibi-raheel/yield-root-cause-lens</a></p>
             <p className="more">More work at <a href="https://ibiraheel.com">ibiraheel.com</a></p>
           </footer>
         </main>
